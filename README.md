@@ -1,32 +1,44 @@
+<p align="center"><img src="assets/screenshot.png" alt="Galactic Anarchy on a Commodore 64" width="640"></p>
+
 # Galactic Anarchy
 
-A first-person space shooter for the Commodore 64, drawn in 3D vector graphics.
+A first-person space shooter for the Commodore 64, drawn in 3D vector graphics. It runs on
+a stock PAL or NTSC machine, written in 6502 assembly.
 
-The galaxy's government has fallen and three factions fight over what is left: the
+The galaxy's government has fallen, and three factions fight over what is left: the
 remains of the old navy, pirates, and a swarm of mining drones that has turned on
 everyone. You fly an interceptor across the sector map from the outer rim to the old
 capital, choosing your route as you go. Sectors get harder the farther you get, and the
-factions fight each other as well as you.
+factions fight each other as well as you. A dogfight sector is cleared by reaching its
+kill quota, and the best scores are saved to disk.
 
-The game is in early development. Nothing playable exists yet beyond a start-up screen.
+## Status
 
-## Requirements
+Early development. The current build starts the machine and shows the start-up screen
+above; the vector engine is being written now. Nothing is playable yet.
 
-- A PAL or NTSC Commodore 64, or an emulator. The game is developed and tested on the
-  [Kernal64](https://github.com/codingncaffeine/Kernal64) core.
-- A joystick in port 2.
+The game is free and open source and will stay that way.
+
+## Playing it
+
+The game is developed and tested on [Kernal64](https://github.com/codingncaffeine/Kernal64),
+a Commodore 64 core for [Emutastic](https://github.com/codingncaffeine/Emutastic-For-Linux)
+and RetroArch. Open `galactic-anarchy.prg` in either one. It should also run on other C64
+emulators and on real hardware, but those are not tested yet.
+
+A joystick in port 2 will be the main control.
 
 ## Building
 
-Linux, with `git`, `make` and a C compiler installed:
+Linux, with `git`, `make` and a C compiler:
 
 ```sh
 ./build.sh
 ```
 
-The first build fetches and compiles the cc65 assembler (release V2.19) into
-`.toolchain/`, unless `ca65` and `ld65` are already installed. The game is written to
-`build/galactic-anarchy.prg`.
+The game is written to `build/galactic-anarchy.prg` and copied to `bin/`. If `ca65` and
+`ld65` (from [cc65](https://cc65.github.io/)) are not installed, the first build fetches
+cc65 V2.19 and compiles it into `.toolchain/`. On Arch Linux, `yay -S cc65` installs it.
 
 `bin/run.sh` starts the build in RetroArch with the Kernal64 core.
 
@@ -36,9 +48,10 @@ The first build fetches and compiles the cc65 assembler (release V2.19) into
 test/run.sh
 ```
 
-The tests run the game headless in Kernal64's `k64run` tool. They need a built Kernal64
-next to this folder (or `K64RUN` pointing to `k64run`) and a folder with your own C64 ROMs
-(`K64_ROMS`, default `~/.config/retroarch/system/kernal64`).
+The tests run the game headless and silent in Kernal64's `k64run` tool, on PAL and NTSC.
+They need a built Kernal64 in a folder next to this one (or `K64RUN` set to the path of
+`k64run`) and a folder with your own C64 ROMs (`K64_ROMS`, by default
+`~/.config/retroarch/system/kernal64`). The ROMs are not part of this repository.
 
 ## License
 
