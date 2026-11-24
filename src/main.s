@@ -65,6 +65,9 @@ start:
         cld
         ldx     #$FF
         txs
+.ifndef BENCH
+        jsr     keep_kernal_zp          ; before anything uses zero page
+.endif
         lda     #$35                    ; RAM everywhere except I/O at $D000
         sta     CPU_PORT
         lda     #$7F                    ; silence both CIAs' interrupts
@@ -843,6 +846,7 @@ txt_blank:      scr "                                      "
         .include "game.s"
         .include "map.s"
         .include "boss.s"
+        .include "hiscore.s"
         .include "sound.s"
         .include "music.s"
         .include "tables.inc"
@@ -857,3 +861,4 @@ txt_blank:      scr "                                      "
         .include "models.inc"
         .include "sprites.inc"
         .include "music.inc"
+        .include "scores.inc"

@@ -23,6 +23,9 @@ STATE_PLAY      = 2
 STATE_OVER      = 3
 STATE_MAP       = 4
 STATE_BOSS      = 5
+STATE_NAME      = 6
+TITLE_SHIP      = 400                   ; ticks of the turning ship, then of the table
+TITLE_TABLE     = 300
 
 ; Kinds of enemy: model, hit points, score / 10, flags, weave mask, how it turns.
 KF_FIRES        = $01                   ; flags
@@ -67,6 +70,9 @@ kind_turn:      .byte TURN_BANK, TURN_BANK, TURN_BANK, TURN_BANK
 
 
         .segment "BSS"
+cross_vis:      .res 1                  ; 1: the crosshair (sprite 0) is shown
+title_phase:    .res 1                  ; 0 = the ship, 1 = the high-score table
+title_t:        .res 2
 en_kind:        .res ENEMY_SLOTS
 en_hp:          .res ENEMY_SLOTS
 en_dx:          .res ENEMY_SLOTS        ; signed, per tick
@@ -118,6 +124,10 @@ game_main:
         sta     cross_y
         jsr     sprites_init
         jsr     sound_init
+.ifdef TEST_DISK
+        jmp     test_disk
+.endif
+        jsr     hs_boot
         jsr     stars_init
         lda     #ENEMY_SLOTS
         sta     obj_count
@@ -170,6 +180,11 @@ game_loop:
         cmp     #STATE_MAP
         bne     :+
         jsr     draw_map
+:       lda     state                   ; the high-score table on the title
+        bne     :+
+        lda     title_phase
+        beq     :+
+        jsr     draw_scores
 :       jsr     transform_all
         jsr     draw_dots
         jsr     draw_stars
@@ -216,8 +231,8 @@ state_tick:
         jmp     (g_tmp)
 
         .segment "RODATA"
-state_lo:       .byte <title_tick, <ready_tick, <play_tick, <over_tick, <map_tick, <boss_tick
-state_hi:       .byte >title_tick, >ready_tick, >play_tick, >over_tick, >map_tick, >boss_tick
+state_lo:       .byte <title_tick, <ready_tick, <play_tick, <over_tick, <map_tick, <boss_tick, <name_tick
+state_hi:       .byte >title_tick, >ready_tick, >play_tick, >over_tick, >map_tick, >boss_tick, >name_tick
         .segment "CODE"
 
 ; rand: A = a pseudo-random byte (16-bit Galois LFSR). Keeps X and Y.
@@ -261,19 +276,48 @@ title_start:
         sta     cross_lock
         lda     #TRACK_TITLE
         jsr     music_play
+        lda     #0
+        sta     title_phase
+        sta     cross_vis               ; no crosshair on the title
+        lda     #<TITLE_SHIP
+        sta     title_t
+        lda     #>TITLE_SHIP
+        sta     title_t+1
         jsr     panel_clear
         print_at PANEL_ROW+1, 12, txt_title
         print_at PANEL_ROW+2, 10, txt_press
         print_at PANEL_ROW+3, 12, txt_high
-        set_pos PANEL_ROW+3, 18
-        ldx     #hiscore
-        jsr     print_score
+        set_pos PANEL_ROW+3, 18          ; the top of the table
+        lda     hs_table+3
+        sta     num
+        lda     hs_table+4
+        sta     num+1
+        lda     hs_table+5
+        sta     num+2
+        jsr     to_decimal
+        lda     #6
+        jsr     put_digits
         lda     #0
         sta     fire_new
         rts
 
+; title_scores: the title, starting with the high-score table.
+title_scores:
+        jsr     title_start
+        jmp     title_flip
+
 title_tick:
-        lda     #6
+        lda     title_t                 ; ship and table take turns
+        bne     :+
+        lda     title_t+1
+        bne     :++
+        jsr     title_flip
+        jmp     :+++
+:       dec     title_t
+        jmp     :++
+:       dec     title_t+1
+        dec     title_t
+:       lda     #6
         jsr     stars_tick
         inc     obj_yaw
         lda     fire_new
@@ -297,6 +341,8 @@ game_new:
         print_at PANEL_ROW+3, 1, txt_kills
         lda     #0
         sta     map_loop
+        lda     #1
+        sta     cross_vis
         jsr     map_new
         jmp     map_start
 
@@ -1229,7 +1275,7 @@ irq_game:
         lda     irq_msb
         sta     $D010
         lda     spr_on
-        ora     #$01
+        ora     cross_vis
         sta     $D015
         lda     spr_big
         sta     $D017
@@ -1631,24 +1677,7 @@ over_start:
         jsr     music_play
         print_at PANEL_ROW+2, 1, txt_blank
         print_at PANEL_ROW+2, 15, txt_over
-        lda     score+2                 ; a new high score?
-        cmp     hiscore+2
-        bcc     @keep
-        bne     @new
-        lda     score+1
-        cmp     hiscore+1
-        bcc     @keep
-        bne     @new
-        lda     score
-        cmp     hiscore
-        bcc     @keep
-@new:   lda     score
-        sta     hiscore
-        lda     score+1
-        sta     hiscore+1
-        lda     score+2
-        sta     hiscore+2
-@keep:  rts
+        rts
 
 over_tick:
         lda     #4
@@ -1657,8 +1686,33 @@ over_tick:
         jsr     bursts_tick
         dec     state_timer
         bne     :+
-        jmp     title_start
+        jsr     hs_rank                 ; into the table?
+        cmp     #HS_COUNT
+        bcs     @title
+        jmp     name_start
+@title: jmp     title_start
 :       rts
+
+; title_flip: from the ship to the table or back.
+title_flip:
+        lda     title_phase
+        eor     #1
+        sta     title_phase
+        beq     @ship
+        lda     #0                      ; the table: no ship
+        sta     obj_active
+        lda     #<TITLE_TABLE
+        sta     title_t
+        lda     #>TITLE_TABLE
+        sta     title_t+1
+        rts
+@ship:  lda     #1
+        sta     obj_active
+        lda     #<TITLE_SHIP
+        sta     title_t
+        lda     #>TITLE_SHIP
+        sta     title_t+1
+        rts
 
 ; enemies_drift: after the end the enemies fly on past.
 enemies_drift:

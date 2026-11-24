@@ -14,7 +14,8 @@ fail=0
 [ -d "$roms" ] || { echo "preflight: ROM folder not found at $roms (set K64_ROMS)"; fail=1; }
 for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.prg \
          build/test/mul.prg build/test/mul-control.prg build/test/play.prg build/test/play-control.prg \
-         build/test/boss.prg build/test/boss-control.prg; do
+         build/test/boss.prg build/test/boss-control.prg build/test/table.prg \
+         build/test/disk-save.prg build/test/disk-load.prg build/galactic-anarchy.d64; do
   [ -f "$root/$f" ] || { echo "preflight: $f missing (run ./build.sh)"; fail=1; }
 done
 [ "$fail" = 0 ] || exit 2
@@ -98,6 +99,12 @@ if [ -x "$k64host" ] && [ -f "$core" ]; then
   check_audio title-music 0 500
   # Control: during the boot, before the game runs, the same check fails.
   check_audio boot-is-quiet 1 100
+  # The disk: the frontend starts it (LOAD"*",8,1 and RUN) and the game reaches its title.
+  taskset -c 0-7 nice -n 10 "$k64host" "$core" --content "$root/build/galactic-anarchy.d64" \
+    --system "$system" --save "$out/save" --frames 3000 --expect-ram "$(label_addr state)" 0 \
+    --expect-ram "$(label_addr game_on)" 1 >"$out/disk-boot.log" 2>&1
+  if [ $? = 0 ]; then echo "ok    disk-boot"; passed=$((passed + 1)); else
+    echo "FAIL  disk-boot: $(grep -m1 FAIL "$out/disk-boot.log")"; failed=$((failed + 1)); fi
   # Fire (RetroPad B, the core's default) on the title starts a game on the map (state 4).
   check_host fire-starts-game 900 state 4 --hold 450 460 0 b 1
   # Fire again on the map: the jump to the chosen sector, which is in play (state 2).
@@ -110,6 +117,19 @@ if [ -x "$k64host" ] && [ -f "$core" ]; then
 else
   echo "FAIL  k64host or the core not found ($k64host, $core)"; failed=$((failed + 1))
 fi
+
+# High scores: a score is ranked and inserted into the table (no disk needed).
+check table 0 --cycles 20000000 --debugcart --autostart "$root/build/test/table.prg"
+# The table saved to a copy of the game's disk through the 1541's own DOS, then loaded back
+# from the disk as it was left.
+cp "$root/build/galactic-anarchy.d64" "$out/disk.d64"
+check disk-save 0 --disk "$out/disk.d64" --cycles 80000000 --debugcart \
+  --autostart "$root/build/test/disk-save.prg" --save-disk "$out/saved.g64"
+check disk-load 0 --disk "$out/saved.g64" --cycles 80000000 --debugcart \
+  --autostart "$root/build/test/disk-load.prg"
+# Control: the game's own disk holds the default table, not the saved one (1).
+check disk-load-fresh 1 --disk "$root/build/galactic-anarchy.d64" --cycles 80000000 --debugcart \
+  --autostart "$root/build/test/disk-load.prg"
 
 # A game played by the test build: it aims at enemies and fires; passes after 5 kills.
 check play 0 --cycles 150000000 --debugcart --autostart "$root/build/test/play.prg"

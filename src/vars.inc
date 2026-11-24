@@ -87,4 +87,7 @@ boss_sub:       .res 1
 ; from music.s (its tables are in BSS there)
 mus_req:        .res 1                  ; track + 1 to start at the next interrupt
 mus_p:          .res 2
+
+; from hiscore.s
+bt_src:         .res 2                  ; the glyph draw_char copies
         .segment "CODE"

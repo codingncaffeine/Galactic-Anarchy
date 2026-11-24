@@ -37,6 +37,9 @@ assemble build/test/mul.prg -D TEST_MUL=1
 assemble build/test/mul-control.prg -D TEST_MUL=1 -D BREAK_MUL=1
 assemble build/test/play.prg -D TEST_PLAY=1
 assemble build/test/play-control.prg -D TEST_PLAY=1 -D TEST_AIM_OFF=60
+assemble build/test/disk-save.prg -D TEST_DISK=1
+assemble build/test/disk-load.prg -D TEST_DISK=2
+assemble build/test/table.prg -D TEST_DISK=3
 assemble build/test/boss.prg -D TEST_PLAY=1 -D TEST_BOSS=1
 assemble build/test/boss-control.prg -D TEST_PLAY=1 -D TEST_BOSS=1 -D TEST_AIM_OFF=60
 for scene in 1 2 3 5; do
@@ -48,7 +51,14 @@ for ((n = 0; n < roster_count; n++)); do
   assemble "build/test/roster-$n.prg" -D BENCH=4 -D ROSTER_ITEM=$n
 done
 
+# The disk: the game and the first high-score file (its load address is the table's).
+table=$(sed -n 's/^al 00\([0-9A-F]*\) \.hs_table$/\1/p' build/galactic-anarchy.labels)
+build/gatool/GaTool scores build/ga-scores.prg "$table"
+build/gatool/GaTool d64 build/galactic-anarchy.d64 "GALACTIC ANARCHY" GA \
+  "GALACTIC ANARCHY=build/galactic-anarchy.prg" "GA SCORES=build/ga-scores.prg"
+
 mkdir -p bin
+cp build/galactic-anarchy.d64 bin/
 cp build/galactic-anarchy.prg bin/
 cp tools/run.sh bin/run.sh
 chmod +x bin/run.sh

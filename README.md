@@ -36,7 +36,8 @@ scores to disk, and speed work for busier scenes. The plan is in the project's n
 
 The game is developed and tested on [Kernal64](https://github.com/codingncaffeine/Kernal64),
 a Commodore 64 core for [Emutastic](https://github.com/codingncaffeine/Emutastic-For-Linux)
-and RetroArch. Open `galactic-anarchy.prg` in either one. It should also run on other C64
+and RetroArch. Open `galactic-anarchy.d64` (the disk image) in either one; the game
+saves its high scores to that disk. `galactic-anarchy.prg` runs too, without saving. It should also run on other C64
 emulators and on real hardware, but those are not tested yet.
 
 Controls: a joystick in port 2. In RetroArch or Emutastic with Kernal64, the RetroPad's
@@ -50,7 +51,8 @@ Linux, with `git`, `make` and a C compiler:
 ./build.sh
 ```
 
-The game is written to `build/galactic-anarchy.prg` and copied to `bin/`. If `ca65` and
+The game is written to `build/galactic-anarchy.prg` and `build/galactic-anarchy.d64`
+and copied to `bin/`. If `ca65` and
 `ld65` (from [cc65](https://cc65.github.io/)) are not installed, the first build fetches
 cc65 V2.19 and compiles it into `.toolchain/`. On Arch Linux, `yay -S cc65` installs it.
 
