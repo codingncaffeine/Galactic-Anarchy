@@ -12,8 +12,15 @@ BOLT_COUNT      = 3
 BURST_COUNT     = 4
 BURST_AGE       = 12
 SHIELD_FULL     = 6
-FIRE_REPEAT     = 10                    ; ticks between shots while fire is held
+FIRE_REPEAT     = 10                    ; ticks before the next press can fire
 LASER_TICKS     = 3
+CHARGE_FULL     = 30                    ; ticks fire is held after a shot to charge one
+HEAVY_DAMAGE    = 3                     ; hit points a charged shot takes
+HEAVY_REACH     = 12                    ; pixels around a box it still hits (a shot: 4)
+HEAVY_BOLT      = 21                    ; pixels from the crosshair it clears bolts (9)
+CROSS_GREEN     = 5
+CROSS_CHARGING  = 13                    ; light green
+CROSS_CHARGED   = 1                     ; white, flashing with green
 READY_TICKS     = 120
 OVER_TICKS      = 200
 
@@ -82,6 +89,12 @@ kind_turn:      .byte TURN_BANK, TURN_BANK, TURN_BANK, TURN_BANK
 
         .segment "BSS"
 cross_vis:      .res 1                  ; 1: the crosshair (sprite 0) is shown
+cross_col:      .res 1                  ; its colour, applied by the interrupt
+charge:         .res 1                  ; 0, or ticks of charging + 1 (to CHARGE_FULL)
+heavy_t:        .res 1                  ; ticks the charged shot's beams are drawn
+heavy_n:        .res 1                  ; charged shots fired (for the tests)
+hit_reach:      .res 1                  ; shoot_enemies: pixels around a box that count
+heavy_i:        .res 1
 demo:           .res 1                  ; 1: the attract demo is playing
 demo_t:         .res 2
 steer_dx:       .res 1
@@ -121,7 +134,9 @@ TEST_AIM_OFF = 0                        ; (test controls aim this far off)
 
 ; =======================================================================================
 game_main:
+        jsr     charge_reset
         lda     #0
+        sta     heavy_n
         sta     $DC02                   ; port A all inputs: $DC00 reads joystick 2 alone
         sta     laser_t
         sta     fire_wait
@@ -343,6 +358,7 @@ title_start:
         sta     title_phase
         sta     cross_vis               ; no crosshair on the title
         sta     laser_t
+        jsr     charge_reset
         lda     #<TITLE_SHIP
         sta     title_t
         lda     #>TITLE_SHIP
@@ -431,6 +447,7 @@ game_new:
 ;   14 + 2 * danger (up to 40), firing 2 + danger (up to 16), arrivals every
 ;   64 - 4 * danger ticks (down to 24).
 ready_start:
+        jsr     charge_reset
         lda     #STATE_READY
         sta     state
         lda     #READY_TICKS
@@ -535,10 +552,8 @@ play_tick:
         jmp     map_after_sector
 :       jsr     bolts_tick
         jsr     bursts_tick
-        lda     laser_t
-        beq     :+
-        dec     laser_t
-:       jsr     player_fire
+        jsr     laser_tick
+        jsr     player_fire
         lda     shield                  ; out of shields: game over
         bne     :+
         jmp     over_start
@@ -548,30 +563,160 @@ play_tick:
         jmp     map_after_sector
 :       rts
 
-; player_fire: a new press fires at once, a held button every FIRE_REPEAT ticks.
+; laser_tick: the beams' time runs out.
+laser_tick:
+        lda     laser_t
+        beq     :+
+        dec     laser_t
+:       lda     heavy_t
+        beq     :+
+        dec     heavy_t
+:       rts
+
+; player_fire: a press fires a shot at once (when FIRE_REPEAT ticks have passed since the
+; last). Holding the button on charges a heavy shot over CHARGE_FULL ticks (the
+; crosshair turns light green, then flashes white), fired when the button is let go.
 player_fire:
         lda     fire_wait
         beq     :+
         dec     fire_wait
 :       lda     fire_new
-        bne     @shoot
-        lda     joy
-        and     #JOY_FIRE
-        beq     @no
-        lda     fire_wait
-        bne     @no
-@shoot: lda     #0
+        beq     @held
+        lda     #0
         sta     fire_new
+        lda     #1                      ; the charge starts
+        sta     charge
+        lda     #CROSS_CHARGING
+        sta     cross_col
+        lda     fire_wait               ; and a shot, unless one went just now
+        bne     @done
         lda     #FIRE_REPEAT
         sta     fire_wait
         lda     #LASER_TICKS
         sta     laser_t
         jsr     sfx_laser
         jsr     shoot_bolts
+        lda     #4
+        sta     hit_reach
         jmp     shoot_enemies
-@no:    rts
+@held:  lda     charge
+        beq     @done
+        lda     joy
+        and     #JOY_FIRE
+        beq     @let_go
+        lda     charge
+        cmp     #CHARGE_FULL
+        bcs     @full
+        inc     charge
+        lda     charge
+        cmp     #CHARGE_FULL
+        bne     @done
+        jmp     sfx_charged
+@full:  lda     frame                   ; charged: flash
+        and     #4
+        beq     :+
+        lda     #CROSS_CHARGED
+        .byte   $2C                     ; skip the next instruction
+:       lda     #CROSS_GREEN
+        sta     cross_col
+@done:  rts
+@let_go:
+        lda     charge
+        cmp     #CHARGE_FULL
+        php
+        jsr     charge_reset
+        plp
+        bcc     @done                   ; let go too early: nothing more
+        inc     heavy_n
+        lda     #LASER_TICKS*3
+        sta     laser_t
+        sta     heavy_t
+        lda     #FIRE_REPEAT
+        sta     fire_wait
+        jsr     sfx_heavy
+        jsr     shoot_bolts_heavy
+        lda     #HEAVY_REACH
+        sta     hit_reach
 
-; shoot_enemies: the nearest enemy whose screen box (widened by 4) holds the crosshair.
+; shoot_heavy: every enemy whose box, widened by HEAVY_REACH, holds the crosshair loses
+; HEAVY_DAMAGE hit points (armour still turns it).
+shoot_heavy:
+        ldx     #ENEMY_SLOTS-1
+@slot:  stx     heavy_i
+        jsr     box_holds_cross
+        bcs     @next
+        ldy     en_kind,x
+        lda     kind_flags,y
+        and     #KF_ARMOR
+        bne     @glance
+        lda     en_hp,x
+        sec
+        sbc     #HEAVY_DAMAGE
+        beq     @kill
+        bcc     @kill
+        sta     en_hp,x
+@glance:
+        jsr     sfx_hit
+        jmp     @next
+@kill:  lda     #0
+        sta     en_hp,x
+        stx     hit_best
+        jsr     destroy_enemy
+@next:  ldx     heavy_i
+        dex
+        bpl     @slot
+        rts
+
+; charge_reset: no charge, the crosshair green.
+charge_reset:
+        lda     #0
+        sta     charge
+        lda     #CROSS_GREEN
+        sta     cross_col
+        rts
+
+; box_holds_cross: carry clear when enemy slot X is active, not a dot, on screen, and its
+; box widened by hit_reach holds the crosshair. Keeps X.
+box_holds_cross:
+        lda     obj_active,x
+        beq     @no
+        lda     obj_dot,x               ; out of range while only a dot
+        bne     @no
+        lda     obj_bb_x0,x
+        cmp     #$FF
+        beq     @no
+        sec                             ; x0 - reach <= cross_x (or x0 < reach)
+        sbc     hit_reach
+        bcc     :+
+        cmp     cross_x
+        beq     :+
+        bcs     @no
+:       lda     obj_bb_x1,x             ; x1 + reach >= cross_x (or past 255)
+        clc
+        adc     hit_reach
+        bcs     :+
+        cmp     cross_x
+        bcc     @no
+:       lda     obj_bb_y0,x
+        sec
+        sbc     hit_reach
+        bcc     :+
+        cmp     cross_y
+        beq     :+
+        bcs     @no
+:       lda     obj_bb_y1,x
+        clc
+        adc     hit_reach
+        bcs     @yes
+        cmp     cross_y
+        bcc     @no
+@yes:   clc
+        rts
+@no:    sec
+        rts
+
+; shoot_enemies: the nearest enemy whose screen box (widened by hit_reach) holds the
+; crosshair.
 shoot_enemies:
         lda     #$FF
         sta     hit_best
@@ -579,40 +724,8 @@ shoot_enemies:
         sta     hit_z+1
         ldx     obj_count
         dex
-@slot:  lda     obj_active,x
-        bne     :+
-        jmp     @next
-:       lda     obj_dot,x               ; out of range while only a dot
-        beq     :+
-        jmp     @next
-:       lda     obj_bb_x0,x
-        cmp     #$FF
-        bne     :+
-        jmp     @next
-:       sec                             ; x0 - 4 <= cross_x (or x0 < 4)
-        sbc     #4
-        bcc     :+
-        cmp     cross_x
-        beq     :+
+@slot:  jsr     box_holds_cross
         bcs     @next
-:       lda     obj_bb_x1,x             ; x1 + 4 >= cross_x (or past 255)
-        clc
-        adc     #4
-        bcs     :+
-        cmp     cross_x
-        bcc     @next
-:       lda     obj_bb_y0,x
-        sec
-        sbc     #4
-        bcc     :+
-        cmp     cross_y
-        beq     :+
-        bcs     @next
-:       lda     obj_bb_y1,x
-        clc
-        adc     #4
-        cmp     cross_y
-        bcc     @next
         lda     obj_z_hi,x              ; the nearest so far?
         cmp     hit_z+1
         bcc     @take
@@ -1290,8 +1403,15 @@ place_bolts:
         sta     spr_big
         rts
 
-; shoot_bolts: a bolt within 8 pixels of the crosshair is shot down.
+; shoot_bolts: a bolt within 8 pixels of the crosshair is shot down; shoot_bolts_heavy:
+; within HEAVY_BOLT - 1.
+shoot_bolts_heavy:
+        lda     #HEAVY_BOLT
+        .byte   $2C                     ; skip the next instruction
 shoot_bolts:
+        lda     #9
+        sta     @r1+1
+        sta     @r2+1
         ldx     #BOLT_COUNT-1
 @b:     lda     bolt_on,x
         beq     @next
@@ -1303,7 +1423,8 @@ shoot_bolts:
         bcs     :+
         eor     #$FF
         adc     #1
-:       cmp     #9
+:
+@r1:    cmp     #9
         bcs     @next
         lda     bolt_sy,x
         sec
@@ -1311,7 +1432,8 @@ shoot_bolts:
         bcs     :+
         eor     #$FF
         adc     #1
-:       cmp     #9
+:
+@r2:    cmp     #9
         bcs     @next
         lda     #0
         sta     bolt_on,x
@@ -1436,6 +1558,8 @@ irq_game:
         inc     cross_x
 :                                       ; (the right-hand stop jumps here)
 @placed:
+        lda     cross_col
+        sta     $D027
         lda     cross_y                 ; sprite 0 = the crosshair
         clc
         adc     #50-10
@@ -1766,6 +1890,26 @@ draw_laser:
         sta     ly1
         jsr     draw_line_marked
         lda     #251
+        sta     lx0
+        lda     #158
+        sta     ly0
+        lda     cross_x
+        sta     lx1
+        lda     cross_y
+        sta     ly1
+        jsr     draw_line_marked
+        lda     heavy_t                 ; a charged shot: two more beams, a little inside
+        beq     :+
+        lda     #12
+        sta     lx0
+        lda     #158
+        sta     ly0
+        lda     cross_x
+        sta     lx1
+        lda     cross_y
+        sta     ly1
+        jsr     draw_line_marked
+        lda     #243
         sta     lx0
         lda     #158
         sta     ly0

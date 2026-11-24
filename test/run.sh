@@ -114,6 +114,12 @@ if [ -x "$k64host" ] && [ -f "$core" ]; then
   check_host map-fire-jumps 1000 state 2 --hold 450 460 0 b 1 --hold 600 610 0 b 1
   # Control: A is not fire, so the title stays (state 0; checked before the attract demo).
   check_host other-button-does-not 600 state 0 --hold 450 460 0 a 1
+  # In the sector, fire held for 60 frames and let go: a charged shot; held for 10 (less
+  # than the charge takes), the control: none.
+  check_host charged-shot 950 heavy_n 1 --hold 450 460 0 b 1 --hold 600 610 0 b 1 \
+    --hold 820 880 0 b 1
+  check_host charged-shot-control 950 heavy_n 0 --hold 450 460 0 b 1 --hold 600 610 0 b 1 \
+    --hold 820 830 0 b 1
   # Left alone, the title moves on to the attract demo (the check at 600 frames above
   # is the control: no demo yet).
   check_host demo-starts 1100 demo 1

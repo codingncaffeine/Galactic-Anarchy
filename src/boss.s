@@ -138,10 +138,8 @@ boss_tick:
         jsr     boss_place
         jsr     bolts_tick
         jsr     bursts_tick
-        lda     laser_t
-        beq     :+
-        dec     laser_t
-:       lda     boss_dying
+        jsr     laser_tick
+        lda     boss_dying
         beq     :+
         jmp     boss_death
 :       jsr     player_fire

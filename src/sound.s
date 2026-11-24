@@ -11,6 +11,8 @@ REQ_LASER       = $01
 REQ_EXPLODE     = $02
 REQ_HIT         = $04
 REQ_SHIELD      = $08
+REQ_CHARGED     = $10
+REQ_HEAVY       = $20
 
 
         .segment "CODE"
@@ -57,6 +59,12 @@ sfx_hit:
         bne     sfx_request
 sfx_shield:
         lda     #REQ_SHIELD
+        bne     sfx_request
+sfx_charged:
+        lda     #REQ_CHARGED
+        bne     sfx_request
+sfx_heavy:
+        lda     #REQ_HEAVY
 sfx_request:
         php                             ; the interrupt clears snd_req: no interrupt
         sei                             ; between reading and writing it
@@ -68,7 +76,9 @@ sfx_request:
 ; sfx_tick: in the raster interrupt.
 sfx_tick:
         lda     snd_req
-        beq     @step
+        bne     :+
+        jmp     @step
+:
         lsr                             ; laser
         bcc     :+
         pha
@@ -115,6 +125,7 @@ sfx_tick:
         pla
 :       lsr                             ; the player's shield hit
         bcc     :+
+        pha
         lda     #0
         sta     laser_snd
         lda     #$0A
@@ -127,6 +138,37 @@ sfx_tick:
         sta     SID+$0B
         lda     #10
         sta     v2_gate
+        pla
+:       lsr                             ; a charge is full: a short high blip
+        bcc     :+
+        pha
+        lda     #0
+        sta     laser_snd
+        lda     #$08
+        sta     SID+$0C
+        lda     #$48
+        sta     SID+$08
+        lda     #$40
+        sta     SID+$0B
+        lda     #$41
+        sta     SID+$0B
+        lda     #2
+        sta     v2_gate
+        pla
+:       lsr                             ; the charged shot: the laser, lower and longer
+        bcc     :+
+        lda     #$62
+        sta     laser_freq
+        lda     #16
+        sta     laser_snd
+        lda     #$0A
+        sta     SID+$0C
+        lda     #$00
+        sta     SID+$0D
+        lda     #$20
+        sta     SID+$0B
+        lda     #$21
+        sta     SID+$0B
 :       lda     #0
         sta     snd_req
 
