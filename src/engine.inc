@@ -17,6 +17,7 @@ FAR_Z_HI          = $10                 ; z >= $1000 is too far for the reciproc
 MAX_VERTS         = 128
 MAX_EDGES         = 255
 MAX_OBJECTS       = 8
+DOT_Z_HI          = $06                 ; objects from z = $0600 on are drawn as a dot
 
 ; The two frame buffers, one per VIC bank:
 ;   buffer 0: bank 2, screen $8400, font $8800, bitmap $A000

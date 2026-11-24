@@ -29,6 +29,8 @@ vmod_y:         .res 2
 vmod_z:         .res 2
 vmod_count:     .res 1
 anim_tick:      .res 1
+px:             .res 1                  ; project_point's result
+py:             .res 1
 bb_minx:        .res 1                  ; screen bounding box of the object's vertices
 bb_maxx:        .res 1
 bb_miny:        .res 1
@@ -48,6 +50,12 @@ obj_roll:       .res MAX_OBJECTS
 obj_dyaw:       .res MAX_OBJECTS
 obj_dpitch:     .res MAX_OBJECTS
 obj_droll:      .res MAX_OBJECTS
+obj_active:     .res MAX_OBJECTS        ; 0 = the slot is empty (its vertices are not drawn)
+obj_dot:        .res MAX_OBJECTS        ; 1 = far away, drawn as a dot at obj_bb_x0/obj_bb_y0
+obj_bb_x0:      .res MAX_OBJECTS        ; screen bounding box after transform_all;
+obj_bb_x1:      .res MAX_OBJECTS        ; x0 = $FF when nothing of it is on screen
+obj_bb_y0:      .res MAX_OBJECTS
+obj_bb_y1:      .res MAX_OBJECTS
 
 scr_x:          .res MAX_VERTS
 scr_y:          .res MAX_VERTS
@@ -156,7 +164,16 @@ transform_all:
         bcc     :+
         rts
 :       tax
-        lda     obj_yaw,x
+        lda     #0
+        sta     obj_dot,x
+        lda     obj_active,x
+        bne     :+
+        jmp     @skip                   ; empty slot
+:       lda     obj_z_hi,x
+        cmp     #DOT_Z_HI
+        bcc     :+
+        jmp     @dot                    ; far away: one point
+:       lda     obj_yaw,x
         sta     rot_yaw
         lda     obj_pitch,x
         sta     rot_pitch
@@ -200,6 +217,15 @@ transform_all:
         lda     cur_vert
         cmp     vmod_count
         bne     @vert
+@box:   ldx     cur_obj                 ; keep the box for hit tests
+        lda     bb_minx
+        sta     obj_bb_x0,x
+        lda     bb_maxx
+        sta     obj_bb_x1,x
+        lda     bb_miny
+        sta     obj_bb_y0,x
+        lda     bb_maxy
+        sta     obj_bb_y1,x
         lda     bb_maxx                 ; anything on screen: its box is drawn into
         cmp     bb_minx
         bcc     :+
@@ -214,6 +240,57 @@ transform_all:
         jsr     mark_dirty
 :       inc     cur_obj
         jmp     @obj
+
+; An empty slot or a dot: its vertices are marked not drawable.
+@skip:  jsr     @hide_verts
+        lda     #$FF
+        sta     bb_minx
+        lda     #0
+        sta     bb_maxx
+        jmp     @box
+@dot:   jsr     @hide_verts
+        ldx     cur_obj
+        lda     obj_x_lo,x
+        sta     wx
+        lda     obj_x_hi,x
+        sta     wx+1
+        lda     obj_y_lo,x
+        sta     wy
+        lda     obj_y_hi,x
+        sta     wy+1
+        lda     obj_z_lo,x
+        sta     wz
+        lda     obj_z_hi,x
+        sta     wz+1
+        jsr     project_point
+        lda     #$FF
+        sta     bb_minx
+        lda     #0
+        sta     bb_maxx
+        bcs     @box
+        ldx     cur_obj
+        lda     #1
+        sta     obj_dot,x
+        lda     px                      ; a 3x3 box around the dot (for hits and clearing)
+        sta     bb_minx
+        sta     bb_maxx
+        lda     py
+        sta     bb_miny
+        sta     bb_maxy
+        jmp     @box
+@hide_verts:
+        ldx     cur_obj
+        ldy     obj_model,x
+        lda     model_vcount,y
+        sta     cnt
+        ldx     vert_out
+        lda     #1
+:       sta     scr_ok,x
+        inx
+        dec     cnt
+        bne     :-
+        stx     vert_out
+        rts
 
 ; The vertex transform multiplies by the matrix through the signed quarter-square table
 ; f (index n + 256): a*b = f(a+b) - f(b-a). With the vertex coordinate b held biased
@@ -308,6 +385,21 @@ transform_vertex:
         ldx     vert_out
         lda     #1
         sta     scr_ok,x                ; not drawable until proven otherwise
+        jsr     project_point
+        bcs     @out
+        ldx     vert_out
+        lda     px
+        sta     scr_x,x
+        lda     py
+        sta     scr_y,x
+        lda     #0
+        sta     scr_ok,x
+        jmp     widen_bbox
+@out:   rts
+
+; project_point: the world point wx, wy, wz (16 bit) to the viewport: px, py with carry
+; clear, or carry set when it is behind the near plane, too far or off the viewport.
+project_point:
         lda     wz+1                    ; near and far limits
         bmi     @out
         cmp     #FAR_Z_HI
@@ -346,8 +438,7 @@ transform_vertex:
         jmp     :++
 :       clc                             ; x = 128 + off
         adc     #VIEW_CX
-:       ldx     vert_out
-        sta     scr_x,x
+:       sta     px
 
         lda     wy
         ldy     wy+1
@@ -363,12 +454,11 @@ transform_vertex:
         jmp     :++
 :       clc                             ; screen y = 79 + off
         adc     #VIEW_CY
-:       ldx     vert_out
-        sta     scr_y,x
-        lda     #0
-        sta     scr_ok,x
-        jmp     widen_bbox
-@out:   rts
+:       sta     py
+        clc
+        rts
+@out:   sec
+        rts
 
 ; widen_bbox: the object's bounding box takes in vertex X.
 widen_bbox:

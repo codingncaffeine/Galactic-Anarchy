@@ -124,6 +124,8 @@ start:
         jmp     mul_test
 .endif
 
+        lda     #0
+        sta     roster_item
 .ifdef BENCH
   .ifdef ROSTER_ITEM
         lda     #ROSTER_ITEM
@@ -609,6 +611,8 @@ start_scene:
         lda     (str_ptr),y
         sta     obj_droll,x
         iny
+        lda     #1
+        sta     obj_active,x
         txa                             ; starting angles differ per object
         asl
         asl
@@ -669,6 +673,7 @@ roster_setup:
         sty     obj_model
         lda     #1
         sta     obj_count
+        sta     obj_active
         lda     #0
         sta     obj_x_lo
         sta     obj_x_hi
