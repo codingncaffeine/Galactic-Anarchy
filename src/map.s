@@ -181,7 +181,7 @@ map_start:
         sta     laser_t
         lda     #1
         sta     panel_dirty
-        lda     joy
+        lda     #0                      ; no press from before counts
         sta     joy_last
         jsr     map_colors
         lda     #TRACK_MAP
@@ -321,11 +321,7 @@ map_tick:
 .endif
         lda     #2
         jsr     stars_tick
-        lda     joy                     ; up / down, newly pressed: the next choice
-        tax
-        eor     joy_last
-        stx     joy_last
-        and     joy
+        jsr     joy_pressed             ; up / down, newly pressed: the next choice
         sta     map_tmp
         and     #%00001                 ; up
         beq     :+

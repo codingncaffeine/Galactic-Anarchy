@@ -252,7 +252,7 @@ name_start:
         lda     #0
         sta     name_pos
         sta     fire_new
-        lda     joy
+        lda     #0                      ; no press from before counts
         sta     joy_last
         print_at PANEL_ROW+2, 1, txt_blank
         print_at PANEL_ROW+2, 6, txt_newhigh
@@ -271,11 +271,7 @@ name_show:
 name_tick:
         lda     #2
         jsr     stars_tick
-        lda     joy                     ; newly pressed directions
-        tax
-        eor     joy_last
-        stx     joy_last
-        and     joy
+        jsr     joy_pressed             ; newly pressed directions
         sta     hs_tmp
         ldx     name_pos
         lda     hs_tmp

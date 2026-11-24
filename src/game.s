@@ -94,6 +94,7 @@ kind_turn:      .byte TURN_BANK, TURN_BANK, TURN_BANK, TURN_BANK
 
         .segment "BSS"
 cross_vis:      .res 1                  ; 1: the crosshair (sprite 0) is shown
+joy_chg:        .res 1                  ; (the interrupt's)
 cross_col:      .res 1                  ; its colour, applied by the interrupt
 charge:         .res 1                  ; 0, or ticks of charging + 1 (to CHARGE_FULL)
 heavy_t:        .res 1                  ; ticks the charged shot's beams are drawn
@@ -136,6 +137,15 @@ burst_big:      .res BURST_COUNT
 .ifndef TEST_AIM_OFF
 TEST_AIM_OFF = 0                        ; (test controls aim this far off)
 .endif
+
+; joy_pressed: A = the joystick bits newly pressed since the last call (fire included).
+joy_pressed:
+        sei
+        lda     joy_last
+        ldx     #0
+        stx     joy_last
+        cli
+        rts
 
 ; =======================================================================================
 game_main:
@@ -399,7 +409,7 @@ title_start:
         print_at PANEL_ROW+2, 10, txt_press
         print_at PANEL_ROW+3, 12, txt_high
         jsr     music_label
-        lda     joy
+        lda     #0                      ; no press from before counts
         sta     joy_last
         set_pos PANEL_ROW+3, 18          ; the top of the table
         lda     hs_table+3
@@ -430,11 +440,7 @@ title_scores:
         jmp     title_flip
 
 title_tick:
-        lda     joy                     ; up or down, newly pressed: music on / off
-        tax
-        eor     joy_last
-        stx     joy_last
-        and     joy
+        jsr     joy_pressed             ; up or down, newly pressed: music on / off
         and     #%00011
         beq     :+
         lda     music_off
@@ -1610,6 +1616,13 @@ irq_game:
         eor     #$FF
         and     #$1F
         tax
+        eor     joy                     ; newly pressed, kept until joy_pressed takes them
+        sta     joy_chg                 ; (a tap shorter than a drawn frame still counts)
+        txa
+        and     joy_chg
+        ora     joy_last
+        sta     joy_last
+        txa
         eor     joy
         and     #JOY_FIRE
         beq     :+

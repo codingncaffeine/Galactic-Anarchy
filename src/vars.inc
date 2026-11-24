@@ -56,7 +56,7 @@ map_sel:        .res 1                  ; index into map_cand
 map_cand_n:     .res 1
 map_cand:       .res 3                  ; rows the player may jump to
 cross_lock:     .res 1                  ; 1: the interrupt leaves the crosshair alone
-joy_last:       .res 1
+joy_last:       .res 1                  ; newly pressed bits, latched by the interrupt
 faction:        .res 1                  ; of the sector being flown
 danger:         .res 1
 boss_fight:     .res 1

@@ -163,11 +163,7 @@ shop_tick:
 .endif
         lda     #2
         jsr     stars_tick
-        lda     joy                     ; up / down, newly pressed: another item
-        tax
-        eor     joy_last
-        stx     joy_last
-        and     joy
+        jsr     joy_pressed             ; up / down, newly pressed: another item
         tax
         and     #%00001
         beq     :+
