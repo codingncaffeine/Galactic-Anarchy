@@ -844,6 +844,7 @@ txt_blank:      scr "                                      "
         .include "map.s"
         .include "boss.s"
         .include "sound.s"
+        .include "music.s"
         .include "tables.inc"
 ; The multiply and reciprocal code patch the low byte of a table address or index a
 ; whole page, so these tables must start on page boundaries.
@@ -855,3 +856,4 @@ txt_blank:      scr "                                      "
         .include "font.inc"
         .include "models.inc"
         .include "sprites.inc"
+        .include "music.inc"

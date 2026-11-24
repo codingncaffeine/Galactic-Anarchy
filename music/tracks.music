@@ -1,0 +1,55 @@
+# Galactic Anarchy music. Compiled by tools/GaTool (Music.cs).
+# Lines starting with # are comments; elsewhere # is a sharp.
+#
+#   track NAME [once]        a new track; "once" plays it a single time, else it loops
+#   v1 WAVE AD SR PW         voice 1's sound: WAVE tri/saw/pulse/noise, attack-decay and
+#   v2 ...                   sustain-release as two hex digits each, pulse width (hex)
+#   NOTE/FRAMES ...          after a voice line: its notes, e.g. A4/12 (octave 0-7, # for
+#                            sharp), R/FRAMES for a rest; | is only for reading
+# Every voice of a track must add up to the same length. 50 frames are a second (PAL).
+
+# Title: A minor, Am F G E, a bar = 96 frames.
+track title
+v1 pulse 09 00 0600
+A2/12 A3/12 A2/12 A3/12 A2/12 A3/12 A2/12 A3/12 |
+F2/12 F3/12 F2/12 F3/12 F2/12 F3/12 F2/12 F3/12 |
+G2/12 G3/12 G2/12 G3/12 G2/12 G3/12 G2/12 G3/12 |
+E2/12 E3/12 E2/12 E3/12 E2/12 E3/12 E2/12 E3/12
+v2 saw 28 8A 0000
+A4/12 C5/12 E5/12 A5/24 G5/12 E5/12 C5/12 |
+F5/24 E5/12 C5/12 A4/24 C5/24 |
+D5/12 G5/12 B5/24 A5/12 G5/12 D5/24 |
+E5/36 D#5/12 E5/12 G#4/12 B4/24
+
+# The map: calm, Am F C G, chord tones rising and falling.
+track map
+v1 tri 0A A8 0000
+A2/96 | F2/96 | C3/96 | G2/96
+v2 pulse 08 00 0400
+A4/12 C5/12 E5/12 C5/12 A4/12 C5/12 E5/12 C5/12 |
+A4/12 C5/12 F5/12 C5/12 A4/12 C5/12 F5/12 C5/12 |
+G4/12 C5/12 E5/12 C5/12 G4/12 C5/12 E5/12 C5/12 |
+G4/12 B4/12 D5/12 B4/12 G4/12 B4/12 D5/12 B4/12
+
+# In a sector: a driving bass on voice 1 alone (the effects use 2 and 3).
+track fight
+v1 pulse 08 00 0700
+E2/6 E2/6 E3/6 E2/6 G2/6 E2/6 A2/6 B2/6 |
+E2/6 E2/6 E3/6 E2/6 D3/6 B2/6 G2/6 A2/6 |
+C2/6 C2/6 C3/6 C2/6 E2/6 C2/6 G2/6 A2/6 |
+D2/6 D2/6 D3/6 D2/6 F#2/6 D2/6 A2/6 B2/6
+
+# The Dreadnought: lower and harder.
+track boss
+v1 saw 08 00 0000
+D2/6 D2/6 D3/6 D2/6 D2/6 G#2/6 A2/6 D2/6 |
+D2/6 D2/6 D3/6 D2/6 F2/6 E2/6 D#2/6 D2/6 |
+A#1/6 A#1/6 A#2/6 A#1/6 A#1/6 E2/6 F2/6 A#1/6 |
+C2/6 C2/6 C3/6 C2/6 C#2/6 C#3/6 C#2/6 A1/6
+
+# Game over: falling, once.
+track over once
+v1 tri 0A A8 0000
+A2/96 | A1/96
+v2 saw 18 6A 0000
+E5/24 D5/24 C5/24 B4/24 | A4/96

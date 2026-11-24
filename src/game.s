@@ -259,6 +259,8 @@ title_start:
         jsr     view_color
         lda     #0
         sta     cross_lock
+        lda     #TRACK_TITLE
+        jsr     music_play
         jsr     panel_clear
         print_at PANEL_ROW+1, 12, txt_title
         print_at PANEL_ROW+2, 10, txt_press
@@ -351,6 +353,11 @@ ready_start:
         sec
         adc     #64
         sta     spawn_delay
+        lda     #TRACK_FIGHT
+        ldx     boss_fight
+        beq     :+
+        lda     #TRACK_BOSS
+:       jsr     music_play
         ldx     faction                 ; the viewport in the faction's colour
         lda     faction_color,x
         jsr     view_color
@@ -1620,6 +1627,8 @@ over_start:
         lda     #OVER_TICKS
         sta     state_timer
         jsr     bolts_clear
+        lda     #TRACK_OVER
+        jsr     music_play
         print_at PANEL_ROW+2, 1, txt_blank
         print_at PANEL_ROW+2, 15, txt_over
         lda     score+2                 ; a new high score?

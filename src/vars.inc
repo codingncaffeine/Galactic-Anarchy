@@ -83,4 +83,8 @@ boss_phase:     .res 1
 boss_dying:     .res 1                  ; ticks of explosions left, 0 = fighting
 boss_secs:      .res 1                  ; the jump countdown
 boss_sub:       .res 1
+
+; from music.s (its tables are in BSS there)
+mus_req:        .res 1                  ; track + 1 to start at the next interrupt
+mus_p:          .res 2
         .segment "CODE"

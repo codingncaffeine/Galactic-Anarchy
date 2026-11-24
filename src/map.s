@@ -149,6 +149,8 @@ map_start:
         lda     joy
         sta     joy_last
         jsr     map_colors
+        lda     #TRACK_MAP
+        jsr     music_play
         jsr     map_candidates
         lda     #0
         sta     map_sel

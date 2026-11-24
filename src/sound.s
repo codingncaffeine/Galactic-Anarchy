@@ -1,7 +1,7 @@
 ; Sound effects on the SID. The game only raises requests (snd_req); the raster interrupt
 ; starts and steps the effects, so the SID is written from one place.
-;   voice 1: the laser, a sawtooth falling in pitch
-;   voice 2: shield hits and damage, a low pulse
+;   voice 2: the laser (a sawtooth falling in pitch), hits and damage (a low pulse); in
+;            a sector the music leaves voice 2 to the effects
 ;   voice 3: explosions, noise with a long decay
 
 SID             = $D400
@@ -25,6 +25,9 @@ sound_init:
         sta     laser_snd
         sta     v2_gate
         sta     v3_gate
+        sta     mus_req
+        sta     mus_on
+        sta     mus_on+1
         lda     #$0F                    ; full volume, no filter
         sta     SID_VOLUME
         lda     #$08                    ; pulse width 50% for voice 2
@@ -73,10 +76,14 @@ sfx_tick:
         sta     laser_freq
         lda     #8
         sta     laser_snd
+        lda     #$09
+        sta     SID+$0C
+        lda     #$00
+        sta     SID+$0D
         lda     #$20                    ; gate off, then on: restart the envelope
-        sta     SID+$04
+        sta     SID+$0B
         lda     #$21
-        sta     SID+$04
+        sta     SID+$0B
         pla
 :       lsr                             ; explosion
         bcc     :+
@@ -93,6 +100,10 @@ sfx_tick:
 :       lsr                             ; an enemy hit but not destroyed
         bcc     :+
         pha
+        lda     #0
+        sta     laser_snd
+        lda     #$0A
+        sta     SID+$0C
         lda     #$18
         sta     SID+$08
         lda     #$40
@@ -104,6 +115,10 @@ sfx_tick:
         pla
 :       lsr                             ; the player's shield hit
         bcc     :+
+        lda     #0
+        sta     laser_snd
+        lda     #$0A
+        sta     SID+$0C
         lda     #$05
         sta     SID+$08
         lda     #$40
@@ -119,14 +134,14 @@ sfx_tick:
         beq     :+
         dec     laser_snd
         lda     laser_freq
-        sta     SID+$01
+        sta     SID+$08
         sec
         sbc     #5
         sta     laser_freq
         lda     laser_snd
         bne     :+
         lda     #$20
-        sta     SID+$04
+        sta     SID+$0B
 :       lda     v2_gate
         beq     :+
         dec     v2_gate
@@ -139,4 +154,4 @@ sfx_tick:
         bne     :+
         lda     #$80
         sta     SID+$12
-:       rts
+:       jmp     music_tick

@@ -1,8 +1,8 @@
 // GaTool: build-time generator for Galactic Anarchy.
 //
-//   GaTool gen OUT_DIR MODELS_DIR
-//       writes tables.inc, font.inc and models.inc (from the .model files in MODELS_DIR)
-//       for the assembler
+//   GaTool gen OUT_DIR MODELS_DIR MUSIC_DIR
+//       writes tables.inc, font.inc, sprites.inc, models.inc (from MODELS_DIR/*.model)
+//       and music.inc (from MUSIC_DIR/*.music) for the assembler
 //   GaTool preview MODELS_DIR OUT.png
 //       draws every model from the top, the front, the side and in perspective
 //
@@ -25,9 +25,9 @@ if (args.Length == 3 && args[0] == "preview")
     }
     return 0;
 }
-if (args.Length != 3 || args[0] != "gen")
+if (args.Length != 4 || args[0] != "gen")
 {
-    Console.Error.WriteLine("usage: GaTool gen OUT_DIR MODELS_DIR | GaTool preview MODELS_DIR OUT.png");
+    Console.Error.WriteLine("usage: GaTool gen OUT_DIR MODELS_DIR MUSIC_DIR | GaTool preview MODELS_DIR OUT.png");
     return 2;
 }
 
@@ -39,6 +39,7 @@ File.WriteAllText(Path.Combine(outDir, "sprites.inc"), Sprites.Generate());
 try
 {
     File.WriteAllText(Path.Combine(outDir, "models.inc"), Models.Generate(args[2]));
+    File.WriteAllText(Path.Combine(outDir, "music.inc"), Music.Generate(args[3]));
 }
 catch (ModelException e)
 {

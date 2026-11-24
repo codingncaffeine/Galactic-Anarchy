@@ -79,7 +79,25 @@ check_host() {
     echo "FAIL  $name: $(grep -m1 FAIL "$out/$name.log") (log: build/test-out/$name.log)"; failed=$((failed + 1))
   fi
 }
+# check_audio NAME WANT FRAMES: the level of the last half second is -40 to -3 dB (music
+# playing) is WANT = 0, or is not (WANT = 1). The audio is only measured, never played.
+check_audio() {
+  local name="$1" want="$2" frames="$3"
+  taskset -c 0-7 nice -n 10 "$k64host" "$core" --content "$root/build/galactic-anarchy.prg" \
+    --system "$system" --save "$out/save" --frames "$frames" --expect-level -40 -3 >"$out/$name.log" 2>&1
+  local got=$?
+  if [ "$got" = "$want" ]; then
+    echo "ok    $name"; passed=$((passed + 1))
+  else
+    echo "FAIL  $name: exit $got, expected $want, $(grep -m1 'level' "$out/$name.log") (log: build/test-out/$name.log)"
+    failed=$((failed + 1))
+  fi
+}
 if [ -x "$k64host" ] && [ -f "$core" ]; then
+  # The title music plays.
+  check_audio title-music 0 500
+  # Control: during the boot, before the game runs, the same check fails.
+  check_audio boot-is-quiet 1 100
   # Fire (RetroPad B, the core's default) on the title starts a game on the map (state 4).
   check_host fire-starts-game 900 state 4 --hold 450 460 0 b 1
   # Fire again on the map: the jump to the chosen sector, which is in play (state 2).
