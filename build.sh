@@ -72,7 +72,8 @@ done
 table=$(sed -n 's/^al 00\([0-9A-F]*\) \.hs_table$/\1/p' build/galactic-anarchy.labels)
 build/gatool/GaTool scores build/ga-scores.prg "$table"
 build/gatool/GaTool d64 build/galactic-anarchy.d64 "GALACTIC ANARCHY" GA \
-  "GALACTIC ANARCHY=build/galactic-anarchy.prg" "GA SCORES=build/ga-scores.prg"
+  "GALACTIC ANARCHY=build/galactic-anarchy.prg" "GA SCORES=build/ga-scores.prg" \
+  "GA SPEECH=assets/ga-speech.prg"
 
 mkdir -p bin
 cp build/galactic-anarchy.d64 bin/

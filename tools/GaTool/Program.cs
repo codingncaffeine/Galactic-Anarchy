@@ -32,6 +32,12 @@ if (args.Length == 3 && args[0] == "scores")
     Scores.WritePrg(args[1], Convert.ToInt32(args[2], 16));
     return 0;
 }
+if (args.Length >= 3 && args[0] == "speech")
+{
+    try { Speech.WritePrg(args[1], args.Skip(2)); }
+    catch (ModelException e) { Console.Error.WriteLine(e.Message); return 1; }
+    return 0;
+}
 if (args.Length >= 5 && args[0] == "d64")
 {
     try

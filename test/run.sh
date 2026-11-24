@@ -75,13 +75,14 @@ check_panel() {
 k64host="${K64HOST:-$root/../Kernal64/bin/k64host}"
 core="${K64CORE:-$root/../Kernal64/bin/kernal64_libretro.so}"
 system="${K64_SYSTEM:-$HOME/.config/retroarch/system}"
-# HOST_PRG (default build/galactic-anarchy) picks the program and its labels.
+# HOST_PRG (default build/galactic-anarchy) picks the program and its labels, HOST_EXT
+# (default prg) the file the frontend starts.
 label_addr() { sed -n "s/^al 00\([0-9A-F]*\) \.$1\$/\1/p" "$root/${HOST_PRG:-build/galactic-anarchy}.labels"; }
 # check_host NAME FRAMES LABEL VALUE [--hold ...]: after FRAMES frames, LABEL's byte = VALUE.
 check_host() {
   local name="$1" frames="$2" label="$3" value="$4"; shift 4
   mkdir -p "$out/save"
-  taskset -c 0-7 nice -n 10 "$k64host" "$core" --content "$root/${HOST_PRG:-build/galactic-anarchy}.prg" \
+  taskset -c 0-7 nice -n 10 "$k64host" "$core" --content "$root/${HOST_PRG:-build/galactic-anarchy}.${HOST_EXT:-prg}" \
     --system "$system" --save "$out/save" --frames "$frames" --expect-ram "$(label_addr "$label")" "$value" \
     --dump "$out/$name.ppm" "$@" >"$out/$name.log" 2>&1
   local got=$?
@@ -116,6 +117,22 @@ if [ -x "$k64host" ] && [ -f "$core" ]; then
     --expect-ram "$(label_addr game_on)" 1 >"$out/disk-boot.log" 2>&1
   if [ $? = 0 ]; then echo "ok    disk-boot"; passed=$((passed + 1)); else
     echo "FAIL  disk-boot: $(grep -m1 FAIL "$out/disk-boot.log")"; failed=$((failed + 1)); fi
+  # Speech: from the disk the samples load (speech_ok), and with the music off the first
+  # sector's "jump" is heard as it starts; the program alone (no GA SPEECH file) stays
+  # quiet at the same moment. The audio is only measured, never played.
+  HOST_EXT=d64 check_host speech-loads 3000 speech_ok 1
+  check_host speech-loads-control 600 speech_ok 0
+  speech_level() {  # speech_level NAME WANT CONTENT TITLE_FRAME
+    local t="$4"
+    taskset -c 0-7 nice -n 10 "$k64host" "$core" --content "$3" --system "$system" --save "$out/save" \
+      --frames $((t + 212)) --expect-level -40 -3 --hold "$t" $((t + 5)) 0 up 1 \
+      --hold $((t + 50)) $((t + 60)) 0 b 1 --hold $((t + 190)) $((t + 200)) 0 b 1 >"$out/$1.log" 2>&1
+    local got=$?
+    if [ "$got" = "$2" ]; then echo "ok    $1"; passed=$((passed + 1)); else
+      echo "FAIL  $1: exit $got, expected $2, $(grep -m1 level "$out/$1.log")"; failed=$((failed + 1)); fi
+  }
+  speech_level speech-plays 0 "$root/build/galactic-anarchy.d64" 3050
+  speech_level speech-control 1 "$root/build/galactic-anarchy.prg" 450
   # Fire (RetroPad B, the core's default) on the title starts a game on the map (state 4).
   check_host fire-starts-game 900 state 4 --hold 450 460 0 b 1
   # Fire again on the map: the jump to the chosen sector, which is in play (state 2).

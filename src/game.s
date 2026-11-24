@@ -171,6 +171,7 @@ game_main:
         jmp     test_disk
 .endif
         jsr     hs_boot
+        jsr     speech_boot
         jsr     stars_init
         lda     #ENEMY_SLOTS
         sta     obj_count
@@ -528,6 +529,7 @@ ready_start:
         adc     #64
         sta     spawn_delay
         jsr     heat_sector             ; a hot faction's own sector: more, sooner
+        jsr     sector_speech
         lda     #TRACK_FIGHT
         ldx     boss_fight
         beq     :+
