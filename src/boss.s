@@ -165,6 +165,8 @@ boss_tick:
         sta     boss_dying
         lda     #BOSS_BONUS
         jsr     add_score_x10
+        lda     #CR_BOSS
+        jsr     credit_add
         lda     #1
         sta     panel_dirty
         print_at PANEL_ROW+2, 1, txt_blank

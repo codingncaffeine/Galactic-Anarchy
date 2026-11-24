@@ -415,9 +415,9 @@ map_after_sector:
 :       lda     shield
         clc
         adc     #2
-        cmp     #SHIELD_FULL+1
+        cmp     shield_max
         bcc     :+
-        lda     #SHIELD_FULL
+        lda     shield_max
 :       sta     shield
         lda     #1
         sta     panel_dirty
@@ -426,7 +426,7 @@ map_after_sector:
         bcc     :+
         inc     map_loop
         jsr     map_new
-        jmp     map_start
+        jmp     dock_start
 :       lda     #2
         sta     map_tmp+2
         lda     #40                     ; tries, in case few sectors are left ahead
@@ -449,7 +449,7 @@ map_after_sector:
         sta     node_faction,x
         dec     map_tmp+2
         bne     @shift
-@done:  jmp     map_start
+@done:  jmp     dock_start
 
 ; map_colors: the viewport white, each sector's cells in its owner's colour.
 map_colors:

@@ -44,6 +44,8 @@ assemble build/test/events.prg -D TEST_PLAY=1 -D TEST_EVENTS=1 -D TEST_AIM_OFF=6
 assemble build/test/events-control.prg -D TEST_PLAY=1 -D TEST_EVENTS=1 -D TEST_AIM_OFF=60 -D NO_RIVALS=1
 assemble build/test/heat.prg -D TEST_PLAY=1 -D TEST_HEAT=1
 assemble build/test/heat-control.prg -D TEST_PLAY=1 -D TEST_HEAT=1 -D NO_HEAT=1
+assemble build/test/shop.prg -D TEST_SHOP=40
+assemble build/test/shop-control.prg -D TEST_SHOP=20
 assemble build/test/ring.prg -D TEST_PLAY=1 -D TEST_MISSION=2
 assemble build/test/ring-control.prg -D TEST_PLAY=1 -D TEST_MISSION=2 -D TEST_AIM_CORNER=1
 assemble build/test/convoy.prg -D TEST_PLAY=1 -D TEST_MISSION=1

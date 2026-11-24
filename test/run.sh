@@ -21,7 +21,7 @@ for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.pr
          build/test/bench-6.prg build/test/clip-control.prg build/test/hidden-control.prg \
          build/test/heat.prg build/test/heat-control.prg build/test/escort.prg \
          build/test/escort-control.prg build/test/escort-lost.prg \
-         build/test/escort-lost-control.prg; do
+         build/test/escort-lost-control.prg build/test/shop.prg build/test/shop-control.prg; do
   [ -f "$root/$f" ] || { echo "preflight: $f missing (run ./build.sh)"; fail=1; }
 done
 [ "$fail" = 0 ] || exit 2
@@ -75,12 +75,13 @@ check_panel() {
 k64host="${K64HOST:-$root/../Kernal64/bin/k64host}"
 core="${K64CORE:-$root/../Kernal64/bin/kernal64_libretro.so}"
 system="${K64_SYSTEM:-$HOME/.config/retroarch/system}"
-label_addr() { sed -n "s/^al 00\([0-9A-F]*\) \.$1\$/\1/p" "$root/build/galactic-anarchy.labels"; }
+# HOST_PRG (default build/galactic-anarchy) picks the program and its labels.
+label_addr() { sed -n "s/^al 00\([0-9A-F]*\) \.$1\$/\1/p" "$root/${HOST_PRG:-build/galactic-anarchy}.labels"; }
 # check_host NAME FRAMES LABEL VALUE [--hold ...]: after FRAMES frames, LABEL's byte = VALUE.
 check_host() {
   local name="$1" frames="$2" label="$3" value="$4"; shift 4
   mkdir -p "$out/save"
-  taskset -c 0-7 nice -n 10 "$k64host" "$core" --content "$root/build/galactic-anarchy.prg" \
+  taskset -c 0-7 nice -n 10 "$k64host" "$core" --content "$root/${HOST_PRG:-build/galactic-anarchy}.prg" \
     --system "$system" --save "$out/save" --frames "$frames" --expect-ram "$(label_addr "$label")" "$value" \
     --dump "$out/$name.ppm" "$@" >"$out/$name.log" 2>&1
   local got=$?
@@ -125,6 +126,12 @@ if [ -x "$k64host" ] && [ -f "$core" ]; then
   # with down (the next lane) leaves it a raid.
   check_host contract-escort 560 conv_side 1 --hold 450 460 0 b 1 --hold 520 525 0 right 1
   check_host contract-control 560 conv_side 0 --hold 450 460 0 b 1 --hold 520 525 0 down 1
+  # The dock (a test build that opens it with 40 credits and the shield at 3): fire buys a
+  # repair, down twice and fire the gun upgrade (30); the control with 20 credits cannot.
+  dock=(--hold 300 305 0 b 1 --hold 350 355 0 down 1 --hold 400 405 0 down 1 --hold 450 455 0 b 1)
+  HOST_PRG=build/test/shop check_host dock-buys 520 gun 1 "${dock[@]}"
+  HOST_PRG=build/test/shop-control check_host dock-control 520 gun 0 "${dock[@]}"
+  HOST_PRG=build/test/shop-control check_host dock-repair-control 520 shield 4 "${dock[@]}"
   # In the sector, fire held for 60 frames and let go: a charged shot; held for 10 (less
   # than the charge takes), the control: none.
   check_host charged-shot 950 heavy_n 1 --hold 450 460 0 b 1 --hold 600 610 0 b 1 \

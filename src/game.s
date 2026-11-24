@@ -31,6 +31,7 @@ STATE_OVER      = 3
 STATE_MAP       = 4
 STATE_BOSS      = 5
 STATE_NAME      = 6
+STATE_SHOP      = 7
 TITLE_SHIP      = 400                   ; ticks of the turning ship, then of the table
 TITLE_TABLE     = 300
 DEMO_TICKS      = 1500                  ; 30 seconds
@@ -178,7 +179,14 @@ game_main:
         sta     game_on
         lda     frame
         sta     last_frame
-.ifdef TEST_PLAY
+.if .defined(TEST_SHOP)
+        jsr     game_new                ; the dock at once, TEST_SHOP credits to spend
+        lda     #TEST_SHOP
+        sta     credits
+        lda     #3
+        sta     shield
+        jsr     dock_start
+.elseif .defined(TEST_PLAY)
         lda     #0
         sta     kills_total
   .ifdef TEST_BOSS
@@ -273,8 +281,10 @@ game_loop:
 
         lda     state
         cmp     #STATE_MAP
+        beq     @map
+        cmp     #STATE_SHOP
         bne     :+
-        jsr     draw_map
+@map:   jsr     draw_map
 :       lda     state                   ; the high-score table on the title
         bne     :+
         lda     title_phase
@@ -328,7 +338,9 @@ state_tick:
 
         .segment "RODATA"
 state_lo:       .byte <title_tick, <ready_tick, <play_tick, <over_tick, <map_tick, <boss_tick, <name_tick
+                .byte <shop_tick
 state_hi:       .byte >title_tick, >ready_tick, >play_tick, >over_tick, >map_tick, >boss_tick, >name_tick
+                .byte >shop_tick
         .segment "CODE"
 
 ; rand: A = a pseudo-random byte (16-bit Galois LFSR). Keeps X and Y.
@@ -579,7 +591,7 @@ play_tick:
 :       lda     kills                   ; quota reached: back to the map
         cmp     quota
         bcc     :+
-        jsr     escort_won
+        jsr     sector_won
         jmp     map_after_sector
 :       rts
 
@@ -596,6 +608,8 @@ escort_safe:
         sta     events
         lda     #ESCORT_BONUS
         jsr     add_score_x10
+        lda     #CR_FREIGHTER
+        jsr     credit_add
         lda     #1
         sta     panel_dirty
         jsr     escort_count
@@ -631,7 +645,8 @@ player_fire:
         sta     cross_col
         lda     fire_wait               ; and a shot, unless one went just now
         bne     @done
-        lda     #FIRE_REPEAT
+        ldx     gun
+        lda     gun_repeat,x
         sta     fire_wait
         lda     #LASER_TICKS
         sta     laser_t
@@ -672,7 +687,8 @@ player_fire:
         lda     #LASER_TICKS*3
         sta     laser_t
         sta     heavy_t
-        lda     #FIRE_REPEAT
+        ldx     gun
+        lda     gun_repeat,x
         sta     fire_wait
         jsr     sfx_heavy
         jsr     shoot_bolts_heavy
@@ -690,9 +706,13 @@ shoot_heavy:
         lda     kind_flags,y
         and     #KF_ARMOR
         bne     @glance
+        lda     #HEAVY_DAMAGE           ; (plus the gun's level)
+        clc
+        adc     gun
+        sta     g_tmp
         lda     en_hp,x
         sec
-        sbc     #HEAVY_DAMAGE
+        sbc     g_tmp
         beq     @kill
         bcc     @kill
         sta     en_hp,x
@@ -787,8 +807,20 @@ shoot_enemies:
         lda     kind_flags,y
         and     #KF_ARMOR
         bne     @hurt
-        dec     en_hp,x
-        bne     @hurt
+        lda     en_hp,x                 ; one hit point, two from gun 1 on
+        ldy     gun
+        beq     :+
+        sec
+        sbc     #1
+        beq     @kill
+:       sec
+        sbc     #1
+        beq     @kill
+        bcc     @kill
+        sta     en_hp,x
+        jmp     @hurt
+@kill:  lda     #0
+        sta     en_hp,x
         jmp     destroy_enemy
 @hurt:  jmp     sfx_hit
 @none:  rts
@@ -839,6 +871,7 @@ destroy_enemy:
         jsr     add_score_x10
         ldx     hit_best                ; and the ship's faction is hotter
         ldy     en_kind,x
+        jsr     credit_kill
         jsr     heat_kill
         jmp     :+
 @other: lda     mission                 ; another's kill: toward the quota, except
@@ -1999,12 +2032,15 @@ panel_clear:
 
 panel_refresh:
         lda     panel_dirty
-        beq     @done
-        lda     #0
+        bne     :+
+        rts
+:       lda     #0
         sta     panel_dirty
         lda     state
         cmp     #STATE_TITLE
-        beq     @done
+        bne     :+
+        rts
+:
         set_pos PANEL_ROW+1, 7
         ldx     #score
         jsr     print_score
@@ -2016,17 +2052,30 @@ panel_refresh:
         lda     #'*' & $3F
 :       jsr     put_char
         iny
-        cpy     #SHIELD_FULL
+        cpy     shield_max
         bne     :--
         set_pos PANEL_ROW+1, 37
         lda     sector
         jsr     print_2digits
+        set_pos PANEL_ROW+3, 33         ; credits
+        lda     credits
+        sta     num
+        lda     #0
+        sta     num+1
+        sta     num+2
+        jsr     to_decimal
+        lda     #3
+        jsr     put_digits
+        lda     state                   ; (the dock has its own words on that row)
+        cmp     #STATE_SHOP
+        beq     :+
         set_pos PANEL_ROW+3, 7
         lda     kills
         jsr     print_2digits
         set_pos PANEL_ROW+3, 13
         lda     quota
         jsr     print_2digits
+:
         lda     demo                    ; heat (the demo's row says how to play)
         bne     @done
         jmp     heat_show
@@ -2080,7 +2129,8 @@ game_reset:
         sta     sector                  ; sectors flown
         lda     #1
         sta     cross_vis
-        lda     #SHIELD_FULL
+        jsr     shop_reset
+        lda     shield_max
         sta     shield
         jsr     heat_reset
         lda     #0                      ; convoys are raided unless the player says
@@ -2217,7 +2267,7 @@ txt_high:       scr "HIGH"
                 .byte 0
 txt_score:      scr "SCORE 000000  SHIELD ------  SECTOR 00"
                 .byte 0
-txt_kills:      scr "KILLS 00 OF 00"
+txt_kills:      scr "KILLS 00 OF 00          CREDITS"
                 .byte 0
 txt_sector:     scr "SECTOR"
                 .byte 0
