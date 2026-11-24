@@ -69,12 +69,15 @@ check_host() {
   fi
 }
 if [ -x "$k64host" ] && [ -f "$core" ]; then
-  # Fire (RetroPad B, the core's default) on the title starts a game: state 2 = play.
-  check_host fire-starts-game 900 state 2 --hold 450 460 0 b 1
+  # Fire (RetroPad B, the core's default) on the title starts a game on the map (state 4).
+  check_host fire-starts-game 900 state 4 --hold 450 460 0 b 1
+  # Fire again on the map: the jump to the chosen sector, which is in play (state 2).
+  check_host map-fire-jumps 1000 state 2 --hold 450 460 0 b 1 --hold 600 610 0 b 1
   # Control: A is not fire, so the title stays (state 0).
   check_host other-button-does-not 900 state 0 --hold 450 460 0 a 1
   # Right held: the crosshair runs from the middle (128) to its stop at 248.
-  check_host crosshair-right 900 cross_x 248 --hold 450 460 0 b 1 --hold 600 700 0 right 1
+  check_host crosshair-right 1000 cross_x 248 --hold 450 460 0 b 1 --hold 600 610 0 b 1 \
+    --hold 800 900 0 right 1
 else
   echo "FAIL  k64host or the core not found ($k64host, $core)"; failed=$((failed + 1))
 fi

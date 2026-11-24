@@ -24,6 +24,7 @@
         .include "gfx.s"
         .include "xform.s"
         .include "panel.s"
+        .include "vars.inc"
 
         .segment "LOADADDR"
         .word   $0801
@@ -840,6 +841,7 @@ txt_blank:      scr "                                      "
                 .byte 0
 
         .include "game.s"
+        .include "map.s"
         .include "sound.s"
         .include "tables.inc"
 ; The multiply and reciprocal code patch the low byte of a table address or index a

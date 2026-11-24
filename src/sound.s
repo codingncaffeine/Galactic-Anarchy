@@ -12,12 +12,6 @@ REQ_EXPLODE     = $02
 REQ_HIT         = $04
 REQ_SHIELD      = $08
 
-        .segment "ZEROPAGE"
-snd_req:        .res 1
-laser_snd:      .res 1                  ; frames of the laser sweep left
-laser_freq:     .res 1                  ; its pitch, high byte
-v2_gate:        .res 1                  ; frames until voice 2's gate goes off
-v3_gate:        .res 1
 
         .segment "CODE"
 

@@ -21,6 +21,7 @@ STATE_TITLE     = 0
 STATE_READY     = 1
 STATE_PLAY      = 2
 STATE_OVER      = 3
+STATE_MAP       = 4
 
 ; Kinds of enemy: model, hit points, score / 10, flags, weave mask, how it turns.
 KF_FIRES        = $01                   ; flags
@@ -57,65 +58,6 @@ kind_turn:      .byte TURN_BANK, TURN_BANK, TURN_BANK, TURN_BANK
                 .byte TURN_WOBBLE, TURN_WOBBLE, TURN_WOBBLE, TURN_WOBBLE
                 .byte TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE
 
-; Sectors 1-6; past 6 the last one repeats, faster each time round.
-SECTOR_KINDS = 6
-sector_quota:   .byte 8, 10, 12, 14, 16, 18
-sector_active:  .byte 3, 3, 4, 4, 5, 5          ; enemies on screen at once
-sector_speed:   .byte 14, 16, 18, 20, 22, 24    ; how fast they close in
-sector_fire:    .byte 3, 4, 5, 6, 7, 8          ; chance to fire per tick, of 256
-sector_delay:   .byte 60, 50, 45, 40, 35, 30    ; ticks between arrivals
-sector_pool_lo: .byte <pool_1, <pool_2, <pool_3, <pool_4, <pool_5, <pool_6
-sector_pool_hi: .byte >pool_1, >pool_2, >pool_3, >pool_4, >pool_5, >pool_6
-; Each pool: 8 kinds, picked at random.
-pool_1:         .byte K_LANCER, K_LANCER, K_RAIDER, K_LANCER, K_ROCK_L, K_RAIDER, K_ROCK_M, K_LANCER
-pool_2:         .byte K_LANCER, K_RAIDER, K_SKITTER, K_MOTH, K_ROCK_L, K_SKITTER, K_RAIDER, K_MOTH
-pool_3:         .byte K_RAIDER, K_SKITTER, K_HORNET, K_MOTH, K_MINE, K_HORNET, K_ROCK_L, K_LANCER
-pool_4:         .byte K_LANCER, K_GUNSHIP, K_HORNET, K_MANTIS, K_ROCK_L, K_MINE, K_RAIDER, K_MANTIS
-pool_5:         .byte K_RAIDER, K_MAULER, K_MANTIS, K_HORNET, K_SKITTER, K_HIVE, K_GUNSHIP, K_ROCK_L
-pool_6:         .byte K_MAULER, K_GUNSHIP, K_MANTIS, K_HORNET, K_HIVE, K_RAIDER, K_MINE, K_SKITTER
-
-        .segment "ZEROPAGE"
-state:          .res 1
-state_timer:    .res 1
-ticks:          .res 1                  ; ticks to run this drawn frame
-last_frame:     .res 1
-rng:            .res 2
-cross_x:        .res 1                  ; crosshair, viewport pixels (moved by the IRQ)
-cross_y:        .res 1
-joy:            .res 1                  ; port 2, 1 = pressed (bits: up down left right fire)
-fire_new:       .res 1                  ; set by the IRQ when fire goes down
-fire_wait:      .res 1
-laser_t:        .res 1
-score:          .res 3
-hiscore:        .res 3
-shield:         .res 1
-sector:         .res 1                  ; 0-based
-kills:          .res 1
-quota:          .res 1
-spawn_t:        .res 1
-speed:          .res 1
-g_tmp:          .res 2
-panel_dirty:    .res 1
-hit_best:       .res 1
-hit_z:          .res 2
-game_on:        .res 1                  ; the raster interrupt runs irq_game
-flash_t:        .res 1
-burst_k:        .res 1
-g_off:          .res 1
-g_spy:          .res 1
-g_on:           .res 1
-g_big:          .res 1
-ptr2:           .res 2
-kills_total:    .res 1
-t5_lo:          .res 1
-t5_hi:          .res 1
-t5_acc:         .res 1
-irq_msb:        .res 1
-spr_on:         .res 1                  ; sprites 1-3: on, doubled (bits 1-3)
-spr_big:        .res 1
-spr_xl:         .res 4                  ; sprite positions for the interrupt to apply
-spr_xh:         .res 4
-spr_y:          .res 4
 
         .segment "BSS"
 en_kind:        .res ENEMY_SLOTS
@@ -148,6 +90,14 @@ burst_big:      .res BURST_COUNT
 game_main:
         lda     #0
         sta     $DC02                   ; port A all inputs: $DC00 reads joystick 2 alone
+        sta     laser_t
+        sta     fire_wait
+        sta     flash_t
+        sta     cross_lock
+        ldx     #BURST_COUNT-1
+:       sta     burst_t,x
+        dex
+        bpl     :-
         sta     hiscore
         sta     hiscore+1
         sta     hiscore+2
@@ -195,7 +145,11 @@ game_loop:
         dec     ticks
         bne     @tick
 
-        jsr     transform_all
+        lda     state
+        cmp     #STATE_MAP
+        bne     :+
+        jsr     draw_map
+:       jsr     transform_all
         jsr     draw_dots
         jsr     draw_stars
         jsr     draw_edges
@@ -241,8 +195,8 @@ state_tick:
         jmp     (g_tmp)
 
         .segment "RODATA"
-state_lo:       .byte <title_tick, <ready_tick, <play_tick, <over_tick
-state_hi:       .byte >title_tick, >ready_tick, >play_tick, >over_tick
+state_lo:       .byte <title_tick, <ready_tick, <play_tick, <over_tick, <map_tick
+state_hi:       .byte >title_tick, >ready_tick, >play_tick, >over_tick, >map_tick
         .segment "CODE"
 
 ; rand: A = a pseudo-random byte (16-bit Galois LFSR). Keeps X and Y.
@@ -280,6 +234,10 @@ title_start:
         lda     #20
         sta     obj_pitch
         jsr     build_edges
+        lda     #COLOR_WHITE<<4
+        jsr     view_color
+        lda     #0
+        sta     cross_lock
         jsr     panel_clear
         print_at PANEL_ROW+1, 12, txt_title
         print_at PANEL_ROW+2, 10, txt_press
@@ -308,15 +266,21 @@ game_new:
         sta     score
         sta     score+1
         sta     score+2
-        sta     sector
+        sta     sector                  ; sectors flown
         lda     #SHIELD_FULL
         sta     shield
         jsr     panel_clear
         print_at PANEL_ROW+1, 1, txt_score
         print_at PANEL_ROW+3, 1, txt_kills
-        jmp     ready_start
+        lda     #0
+        sta     map_loop
+        jsr     map_new
+        jmp     map_start
 
-; The sector's settings, then a pause with its number shown.
+; The sector's settings from its danger and faction, then a pause with its number shown.
+;   quota 6 + 2 * danger (up to 20), on screen 2 + danger / 2 (up to 6), closing speed
+;   14 + 2 * danger (up to 40), firing 2 + danger (up to 16), arrivals every
+;   64 - 4 * danger ticks (down to 24).
 ready_start:
         lda     #STATE_READY
         sta     state
@@ -326,30 +290,55 @@ ready_start:
         jsr     bolts_clear
         lda     #0
         sta     kills
-        lda     sector
-        cmp     #SECTOR_KINDS
+        inc     sector
+        lda     danger
+        cmp     #7
         bcc     :+
-        lda     #SECTOR_KINDS-1
-:       tax
-        lda     sector_quota,x
-        sta     quota
-        lda     sector                  ; past the last kind of sector: faster each time
-        sec
-        sbc     #SECTOR_KINDS-1
-        bcs     :+
-        lda     #0
+        lda     #7
 :       asl
+        adc     #6
+        sta     quota
+        lda     danger
+        lsr
         clc
-        adc     sector_speed,x
+        adc     #2
+        cmp     #ENEMY_SLOTS+1
+        bcc     :+
+        lda     #ENEMY_SLOTS
+:       sta     active_max
+        lda     danger
+        cmp     #13
+        bcc     :+
+        lda     #13
+:       asl
+        adc     #14
         sta     speed
+        lda     danger
+        clc
+        adc     #2
+        cmp     #17
+        bcc     :+
+        lda     #16
+:       sta     fire_rate
+        lda     danger
+        cmp     #10
+        bcc     :+
+        lda     #10
+:       asl
+        asl
+        eor     #$FF
+        sec
+        adc     #64
+        sta     spawn_delay
+        ldx     faction                 ; the viewport in the faction's colour
+        lda     faction_color,x
+        jsr     view_color
         lda     #1
         sta     panel_dirty
         print_at PANEL_ROW+2, 1, txt_blank
         print_at PANEL_ROW+2, 15, txt_sector
         set_pos PANEL_ROW+2, 22
         lda     sector
-        clc
-        adc     #1
         jsr     print_2digits
         rts
 
@@ -383,11 +372,10 @@ play_tick:
         lda     shield                  ; out of shields: game over
         bne     :+
         jmp     over_start
-:       lda     kills                   ; quota reached: the next sector
+:       lda     kills                   ; quota reached: back to the map
         cmp     quota
         bcc     :+
-        inc     sector
-        jmp     ready_start
+        jmp     map_after_sector
 :       rts
 
 ; player_fire: a new press fires at once, a held button every FIRE_REPEAT ticks.
@@ -613,14 +601,10 @@ spawn_enemy:
         jsr     free_slot
         bcs     @no
         stx     g_tmp+1
-        lda     sector
-        cmp     #SECTOR_KINDS
-        bcc     :+
-        lda     #SECTOR_KINDS-1
-:       tay
-        lda     sector_pool_lo,y
+        ldy     faction
+        lda     faction_pool_lo,y
         sta     ptr2
-        lda     sector_pool_hi,y
+        lda     faction_pool_hi,y
         sta     ptr2+1
         jsr     rand
         and     #7
@@ -695,14 +679,9 @@ times5:
 enemies_tick:
         dec     spawn_t
         bne     @move
-        lda     sector
-        cmp     #SECTOR_KINDS
-        bcc     :+
-        lda     #SECTOR_KINDS-1
-:       tax
-        lda     sector_delay,x
+        lda     spawn_delay
         sta     spawn_t
-        lda     sector_active,x         ; room for another?
+        lda     active_max              ; room for another?
         sta     g_tmp
         ldy     #0
         ldx     #ENEMY_SLOTS-1
@@ -806,11 +785,7 @@ enemies_tick:
         cmp     #6
         bcs     @nofire
         jsr     rand
-        ldy     sector
-        cpy     #SECTOR_KINDS
-        bcc     :+
-        ldy     #SECTOR_KINDS-1
-:       cmp     sector_fire,y
+        cmp     fire_rate
         bcs     @nofire
         jsr     bolt_spawn
 @nofire:
@@ -1152,6 +1127,8 @@ irq_game:
         beq     :+
         sta     fire_new
 :       stx     joy
+        lda     cross_lock              ; on the map the game places the crosshair
+        bne     @placed
         txa
         lsr                             ; up
         bcc     :+
@@ -1185,7 +1162,9 @@ irq_game:
         inc     cross_x
         inc     cross_x
         inc     cross_x
-:       lda     cross_y                 ; sprite 0 = the crosshair
+:                                       ; (the right-hand stop jumps here)
+@placed:
+        lda     cross_y                 ; sprite 0 = the crosshair
         clc
         adc     #50-10
         sta     $D001
@@ -1557,8 +1536,6 @@ panel_refresh:
         bne     :--
         set_pos PANEL_ROW+1, 37
         lda     sector
-        clc
-        adc     #1
         jsr     print_2digits
         set_pos PANEL_ROW+3, 7
         lda     kills
@@ -1726,3 +1703,11 @@ test_autoplay:
         sta     fire_new
 :       rts
 .endif
+
+; boss_start: until the Dreadnought fight exists, a boss sector is a harder fight.
+boss_start:
+        inc     danger
+        inc     danger
+        lda     #F_CORSAIR
+        sta     faction
+        jmp     ready_start
