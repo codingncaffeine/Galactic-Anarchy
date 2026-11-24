@@ -84,6 +84,8 @@ kind_turn:      .byte TURN_BANK, TURN_BANK, TURN_BANK, TURN_BANK
 cross_vis:      .res 1                  ; 1: the crosshair (sprite 0) is shown
 demo:           .res 1                  ; 1: the attract demo is playing
 demo_t:         .res 2
+steer_dx:       .res 1
+steer_dy:       .res 1
 music_off:      .res 1                  ; 1: the player turned the music off
 title_phase:    .res 1                  ; 0 = the ship, 1 = the high-score table
 title_t:        .res 2
@@ -521,6 +523,7 @@ play_tick:
         lda     speed
         jsr     stars_tick
         jsr     enemies_tick
+        jsr     steer_world
         jsr     centi_tick
         jsr     duels_tick
         jsr     ring_tick               ; the reactor ran out?
@@ -1013,6 +1016,70 @@ enemies_tick:
         bmi     :+
         jmp     @slot
 :       rts
+
+; steer_world: flying: the crosshair's offset from the centre turns the ship, so the
+; world slides the other way, enemies (world units per tick) and stars alike.
+steer_world:
+        lda     cross_x                 ; dx = (cross_x - 128) / 16, -8..7
+        sec
+        sbc     #VIEW_CX
+        cmp     #$80
+        ror
+        cmp     #$80
+        ror
+        cmp     #$80
+        ror
+        cmp     #$80
+        ror
+        sta     steer_dx
+        lda     cross_y                 ; dy = (cross_y - 79) / 16, -5..4
+        sec
+        sbc     #VIEW_CY
+        cmp     #$80
+        ror
+        cmp     #$80
+        ror
+        cmp     #$80
+        ror
+        cmp     #$80
+        ror
+        sta     steer_dy
+        ldx     #ENEMY_SLOTS-1
+@e:     lda     obj_active,x
+        beq     @next
+        lda     steer_dx                ; x -= dx
+        eor     #$FF
+        clc
+        adc     #1
+        jsr     add_x
+        lda     steer_dy                ; y += dy (aiming up brings things down)
+        jsr     add_y
+@next:  dex
+        bpl     @e
+        lda     steer_dx                ; stars by a quarter of that
+        cmp     #$80
+        ror
+        cmp     #$80
+        ror
+        sta     steer_dx
+        lda     steer_dy
+        cmp     #$80
+        ror
+        cmp     #$80
+        ror
+        sta     steer_dy
+        ldx     #STAR_COUNT-1
+:       lda     star_x,x
+        sec
+        sbc     steer_dx
+        sta     star_x,x
+        lda     star_y,x
+        clc
+        adc     steer_dy
+        sta     star_y,x
+        dex
+        bpl     :-
+        rts
 
 ; near_centre: A = high byte of a coordinate. Carry clear when it is within -256..255.
 near_centre:
