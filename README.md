@@ -19,23 +19,32 @@ a demo in turn; press fire to start. A game is a journey across the sector map, 
 right, picking your route lane by lane:
 
 - Each sector belongs to the Concord, the Corsairs or the Swarm, whose fighters and
-  insect machines you meet there, or is an asteroid field. Some are convoys of freighters
-  to raid, and some are derelict stations where you thread rings before the reactor blows.
-  A sector is cleared at its kill quota, and the farther across the map, the harder.
+  insect machines you meet there, or is an asteroid field. Some are derelict stations
+  where you thread rings before the reactor blows. A sector is cleared at its kill quota,
+  and the farther across the map, the harder.
+- Some sectors are convoys of freighters. Left or right on the map chooses whether you
+  raid the convoy or escort it against its rivals' fighters.
 - Rival factions turn up in each other's space and fight among themselves;
   what they destroy counts toward your quota.
+- Every faction keeps a heat for you, shown on the panel. The ones you shoot send more
+  ships, sooner, and take over more of the map ahead; shooting their rivals cools them.
+- Kills and cleared sectors earn credits. After each sector the dock sells shield
+  repairs, shield cells and gun upgrades.
 - The Dreadnought waits in the middle of the map and at its end: knock out its four weak
   points before it jumps away.
 - High scores are saved to the disk with your initials.
 
-Steer with the joystick (the view turns as you aim) and hold fire to shoot. Enemy shots
+Steer with the joystick (the view turns as you aim) and press fire to shoot. Hold fire
+and let go to fire a charged shot that hits everything near the crosshair. Enemy shots
 can be shot down. Every hit costs a shield block, a cleared sector repairs two, and the
-game ends when they are gone. Up or down on the title turns the music on or off.
+game ends when they are gone. Up or down on the title turns the music on or off. Played
+from the disk image, the game also speaks a few warnings.
 
 <p align="center"><img src="assets/screenshot.png" alt="Galactic Anarchy running in Kernal64" width="640"></p>
 
 All the ships, rocks and insects are made in `models/` and the music in `music/`, both in
-plain text formats compiled by the project's own tool.
+plain text formats compiled by the project's own tool. The spoken warnings are made with
+[espeak-ng](https://github.com/espeak-ng/espeak-ng) by `tools/speech.sh`.
 
 ## Playing it
 
