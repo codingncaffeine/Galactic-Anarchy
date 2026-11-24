@@ -16,7 +16,12 @@ mus_on:         .res 2                  ; and whether it plays
 
 ; music_play: A = track. Takes effect at the next interrupt.
 music_play:
-        clc
+        ldx     music_off
+        beq     :+
+        lda     #$FF                    ; music off: silence instead
+        sta     mus_req
+        rts
+:       clc
         adc     #1
         sta     mus_req
         rts
@@ -24,8 +29,20 @@ music_play:
 ; music_tick: in the raster interrupt.
 music_tick:
         lda     mus_req
-        beq     @step
-        sec
+        bne     :+
+        jmp     @step
+:       cmp     #$FF
+        bne     :+
+        lda     #0                      ; stop: both voices quiet
+        sta     mus_req
+        sta     mus_on
+        sta     mus_on+1
+        lda     mus_wave
+        sta     SID+4
+        lda     mus_wave+1
+        sta     SID+4+7
+        rts
+:       sec
         sbc     #1
         asl
         sta     mus_tmp                 ; track * 2: index of its voice 1

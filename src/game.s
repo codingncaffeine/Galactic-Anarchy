@@ -26,6 +26,7 @@ STATE_BOSS      = 5
 STATE_NAME      = 6
 TITLE_SHIP      = 400                   ; ticks of the turning ship, then of the table
 TITLE_TABLE     = 300
+DEMO_TICKS      = 1500                  ; 30 seconds
 
 ; Kinds of enemy: model, hit points, score / 10, flags, weave mask, how it turns.
 KF_FIRES        = $01                   ; flags
@@ -81,6 +82,9 @@ kind_turn:      .byte TURN_BANK, TURN_BANK, TURN_BANK, TURN_BANK
 
         .segment "BSS"
 cross_vis:      .res 1                  ; 1: the crosshair (sprite 0) is shown
+demo:           .res 1                  ; 1: the attract demo is playing
+demo_t:         .res 2
+music_off:      .res 1                  ; 1: the player turned the music off
 title_phase:    .res 1                  ; 0 = the ship, 1 = the high-score table
 title_t:        .res 2
 en_kind:        .res ENEMY_SLOTS
@@ -109,6 +113,10 @@ burst_big:      .res BURST_COUNT
 
         .segment "CODE"
 
+.ifndef TEST_AIM_OFF
+TEST_AIM_OFF = 0                        ; (test controls aim this far off)
+.endif
+
 ; =======================================================================================
 game_main:
         lda     #0
@@ -117,6 +125,9 @@ game_main:
         sta     fire_wait
         sta     flash_t
         sta     cross_lock
+        sta     demo
+        sta     music_off
+        sta     by_other
         ldx     #BURST_COUNT-1
 :       sta     burst_t,x
         dex
@@ -218,7 +229,10 @@ game_loop:
 :       sta     ticks
         lda     frame
         sta     last_frame
-@tick:  jsr     state_tick
+@tick:  lda     demo                    ; the attract demo watches for fire
+        beq     :+
+        jsr     demo_tick
+:       jsr     state_tick
         dec     ticks
         bne     @tick
 
@@ -326,6 +340,7 @@ title_start:
         lda     #0
         sta     title_phase
         sta     cross_vis               ; no crosshair on the title
+        sta     laser_t
         lda     #<TITLE_SHIP
         sta     title_t
         lda     #>TITLE_SHIP
@@ -334,6 +349,9 @@ title_start:
         print_at PANEL_ROW+1, 12, txt_title
         print_at PANEL_ROW+2, 10, txt_press
         print_at PANEL_ROW+3, 12, txt_high
+        jsr     music_label
+        lda     joy
+        sta     joy_last
         set_pos PANEL_ROW+3, 18          ; the top of the table
         lda     hs_table+3
         sta     num
@@ -348,13 +366,35 @@ title_start:
         sta     fire_new
         rts
 
+; music_label: the music setting on the panel's bottom row.
+music_label:
+        lda     music_off
+        bne     :+
+        print_at PANEL_ROW+4, 9, txt_music_on
+        rts
+:       print_at PANEL_ROW+4, 9, txt_music_off
+        rts
+
 ; title_scores: the title, starting with the high-score table.
 title_scores:
         jsr     title_start
         jmp     title_flip
 
 title_tick:
-        lda     title_t                 ; ship and table take turns
+        lda     joy                     ; up or down, newly pressed: music on / off
+        tax
+        eor     joy_last
+        stx     joy_last
+        and     joy
+        and     #%00011
+        beq     :+
+        lda     music_off
+        eor     #1
+        sta     music_off
+        jsr     music_label
+        lda     #TRACK_TITLE
+        jsr     music_play
+:       lda     title_t                 ; ship, table and demo take turns
         bne     :+
         lda     title_t+1
         bne     :++
@@ -376,16 +416,7 @@ title_tick:
 
 ; =======================================================================================
 game_new:
-        lda     #0
-        sta     score
-        sta     score+1
-        sta     score+2
-        sta     sector                  ; sectors flown
-        lda     #SHIELD_FULL
-        sta     shield
-        jsr     panel_clear
-        print_at PANEL_ROW+1, 1, txt_score
-        print_at PANEL_ROW+3, 1, txt_kills
+        jsr     game_reset
         lda     #0
         sta     map_loop
         lda     #1
@@ -637,8 +668,10 @@ destroy_enemy:
         jsr     add_score_x10
 :
         inc     kills
+        lda     by_other                ; the player's own kills, for the tests
+        bne     :+
         inc     kills_total
-        lda     #1
+:       lda     #1
         sta     panel_dirty
         jsr     sfx_explode
         ldx     hit_best
@@ -1756,6 +1789,22 @@ add_score_x10:
         inc     score+2
 :       rts
 
+; game_reset: a new game's score, shields and panel.
+game_reset:
+        lda     #0
+        sta     score
+        sta     score+1
+        sta     score+2
+        sta     sector                  ; sectors flown
+        lda     #1
+        sta     cross_vis
+        lda     #SHIELD_FULL
+        sta     shield
+        jsr     panel_clear
+        print_at PANEL_ROW+1, 1, txt_score
+        print_at PANEL_ROW+3, 1, txt_kills
+        rts
+
 ; =======================================================================================
 over_start:
         lda     #STATE_OVER
@@ -1776,32 +1825,82 @@ over_tick:
         jsr     bursts_tick
         dec     state_timer
         bne     :+
-        jsr     hs_rank                 ; into the table?
+        lda     demo                    ; (the demo's score does not count)
+        beq     @rank
+        jsr     demo_stop
+        jmp     title_start
+@rank:  jsr     hs_rank                 ; into the table?
         cmp     #HS_COUNT
         bcs     @title
         jmp     name_start
 @title: jmp     title_start
 :       rts
 
-; title_flip: from the ship to the table or back.
+; title_flip: the ship, then the table, then the demo.
 title_flip:
+        inc     title_phase
         lda     title_phase
-        eor     #1
-        sta     title_phase
-        beq     @ship
-        lda     #0                      ; the table: no ship
+        cmp     #2
+        bne     :+
+        jmp     demo_start
+:       lda     #0                      ; the table: no ship
         sta     obj_active
         lda     #<TITLE_TABLE
         sta     title_t
         lda     #>TITLE_TABLE
         sta     title_t+1
         rts
-@ship:  lda     #1
-        sta     obj_active
-        lda     #<TITLE_SHIP
-        sta     title_t
-        lda     #>TITLE_SHIP
-        sta     title_t+1
+
+; demo_start: the game plays itself for DEMO_TICKS, or until fire is pressed.
+demo_start:
+        lda     #1
+        sta     demo
+        lda     #<DEMO_TICKS
+        sta     demo_t
+        lda     #>DEMO_TICKS
+        sta     demo_t+1
+        jsr     game_reset
+        jsr     rand_faction
+        sta     faction
+        lda     #MIS_FIGHT
+        sta     mission
+        lda     #1
+        sta     danger
+        lda     #0
+        sta     map_col
+        sta     boss_fight
+        jsr     ready_start
+        print_at PANEL_ROW+4, 1, txt_blank
+        print_at PANEL_ROW+4, 7, txt_demo
+        rts
+
+; demo_tick: in the demo, before each tick: fire starts a real game, time ends the demo,
+; and in a sector the autopilot flies.
+demo_tick:
+        lda     joy
+        and     #JOY_FIRE
+        beq     :+
+        jsr     demo_stop
+        lda     #0
+        sta     fire_new
+        jmp     game_new
+:       lda     demo_t
+        bne     :+
+        dec     demo_t+1
+        bpl     :+
+        jsr     demo_stop
+        jmp     title_start
+:       dec     demo_t
+        lda     state
+        cmp     #STATE_PLAY
+        bne     :+
+        jmp     autopilot
+:       rts
+
+demo_stop:
+        lda     #0
+        sta     demo
+        print_at PANEL_ROW+4, 1, txt_blank
         rts
 
 ; enemies_drift: after the end the enemies fly on past.
@@ -1837,14 +1936,17 @@ txt_sector:     scr "SECTOR"
                 .byte 0
 txt_over:       scr "GAME  OVER"
                 .byte 0
+txt_demo:       scr "DEMO  -  PRESS FIRE TO PLAY"
+                .byte 0
+txt_music_on:   scr "UP OR DOWN   MUSIC ON "
+                .byte 0
+txt_music_off:  scr "UP OR DOWN   MUSIC OFF"
+                .byte 0
 
 .ifdef TEST_PLAY
 ; test_autoplay: aims at the first enemy with a box on screen and fires whenever the gun is
 ; ready. Passes (0 to the debug port) after 5 kills; fails (2) if the shields run out.
 ; TEST_AIM_OFF = n aims n pixels to the right of the target (the control: no kills).
-.ifndef TEST_AIM_OFF
-TEST_AIM_OFF = 0
-.endif
 test_autoplay:
   .ifdef TEST_MISSION
         lda     #99
@@ -1878,7 +1980,13 @@ test_autoplay:
         bne     :+
         lda     #2
         sta     DEBUGCART_RESULT
-:       ldx     #ENEMY_SLOTS-1
+:       jmp     autopilot
+.endif
+
+; autopilot: aims at the first enemy with a box on screen (in a Ring Run also at rings) and
+; fires whenever the gun is ready. Plays the attract demo and the test builds.
+autopilot:
+        ldx     #ENEMY_SLOTS-1
 @find:  lda     obj_active,x
         beq     @next
         lda     obj_dot,x
@@ -1922,4 +2030,3 @@ test_autoplay:
         lda     #1
         sta     fire_new
 :       rts
-.endif

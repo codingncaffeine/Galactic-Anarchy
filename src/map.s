@@ -371,7 +371,12 @@ map_tick:
 ; map_after_sector: shields repaired a little, two sectors ahead change hands, back to
 ; the map (or round again after the last column).
 map_after_sector:
-        lda     shield
+        lda     demo                    ; the demo flies on in a fresh sector
+        beq     :+
+        jsr     rand_faction
+        sta     faction
+        jmp     ready_start
+:       lda     shield
         clc
         adc     #2
         cmp     #SHIELD_FULL+1

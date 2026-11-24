@@ -67,7 +67,7 @@ check_panel() {
 k64host="${K64HOST:-$root/../Kernal64/bin/k64host}"
 core="${K64CORE:-$root/../Kernal64/bin/kernal64_libretro.so}"
 system="${K64_SYSTEM:-$HOME/.config/retroarch/system}"
-label_addr() { sed -n "s/^al 0000\([0-9A-F]*\) \.$1\$/\1/p" "$root/build/galactic-anarchy.labels"; }
+label_addr() { sed -n "s/^al 00\([0-9A-F]*\) \.$1\$/\1/p" "$root/build/galactic-anarchy.labels"; }
 # check_host NAME FRAMES LABEL VALUE [--hold ...]: after FRAMES frames, LABEL's byte = VALUE.
 check_host() {
   local name="$1" frames="$2" label="$3" value="$4"; shift 4
@@ -101,9 +101,9 @@ if [ -x "$k64host" ] && [ -f "$core" ]; then
   check_audio title-music 0 500
   # Control: during the boot, before the game runs, the same check fails.
   check_audio boot-is-quiet 1 100
-  # The disk: the frontend starts it (LOAD"*",8,1 and RUN) and the game reaches its title.
+  # The disk: the frontend starts it (LOAD"*",8,1 and RUN) and the game is running.
   taskset -c 0-7 nice -n 10 "$k64host" "$core" --content "$root/build/galactic-anarchy.d64" \
-    --system "$system" --save "$out/save" --frames 3000 --expect-ram "$(label_addr state)" 0 \
+    --system "$system" --save "$out/save" --frames 3000 \
     --expect-ram "$(label_addr game_on)" 1 >"$out/disk-boot.log" 2>&1
   if [ $? = 0 ]; then echo "ok    disk-boot"; passed=$((passed + 1)); else
     echo "FAIL  disk-boot: $(grep -m1 FAIL "$out/disk-boot.log")"; failed=$((failed + 1)); fi
@@ -111,8 +111,14 @@ if [ -x "$k64host" ] && [ -f "$core" ]; then
   check_host fire-starts-game 900 state 4 --hold 450 460 0 b 1
   # Fire again on the map: the jump to the chosen sector, which is in play (state 2).
   check_host map-fire-jumps 1000 state 2 --hold 450 460 0 b 1 --hold 600 610 0 b 1
-  # Control: A is not fire, so the title stays (state 0).
-  check_host other-button-does-not 900 state 0 --hold 450 460 0 a 1
+  # Control: A is not fire, so the title stays (state 0; checked before the attract demo).
+  check_host other-button-does-not 600 state 0 --hold 450 460 0 a 1
+  # Left alone, the title moves on to the attract demo (the check at 600 frames above
+  # is the control: no demo yet).
+  check_host demo-starts 1100 demo 1
+  # Up on the title turns the music off; a second push turns it on again.
+  check_host music-off 700 music_off 1 --hold 450 455 0 up 1
+  check_host music-on-again 700 music_off 0 --hold 450 455 0 up 1 --hold 500 505 0 up 1
   # Right held: the crosshair runs from the middle (128) to its stop at 248.
   check_host crosshair-right 1000 cross_x 248 --hold 450 460 0 b 1 --hold 600 610 0 b 1 \
     --hold 800 900 0 right 1
@@ -134,9 +140,10 @@ check disk-load-fresh 1 --disk "$root/build/galactic-anarchy.d64" --cycles 80000
   --autostart "$root/build/test/disk-load.prg"
 
 # A game played by the test build: it aims at enemies and fires; passes after 5 kills.
-check play 0 --cycles 150000000 --debugcart --autostart "$root/build/test/play.prg"
-# Control: the same, aiming 60 pixels to the side, must not get there.
-check play-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/play-control.prg"
+check play 0 --cycles 40000000 --debugcart --autostart "$root/build/test/play.prg"
+# Control: the same, aiming 60 pixels to the side, must not get there in the time (the
+# test itself takes about 10 million cycles).
+check play-control 124 --cycles 40000000 --debugcart --autostart "$root/build/test/play-control.prg"
 # Anarchy: in a dangerous Swarm sector rivals arrive and duel the owners, and a centipede
 # comes; the control without rivals never sees a duel (no result).
 check events 0 --cycles 150000000 --debugcart --autostart "$root/build/test/events.prg"
