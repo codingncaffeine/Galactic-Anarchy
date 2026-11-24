@@ -424,9 +424,15 @@ project_point:
 @rd:    lda     recip,y
         sta     recip_val
 
+        sta     mr_p1+1                 ; the factor into mul_r's operands
+        sta     mr_p3+1
+        eor     #$FF
+        sta     mr_p2+1
+        sta     mr_p4+1
+
         lda     wx                      ; x offset = |wx| * recip / 256
         ldy     wx+1
-        jsr     project
+        jsr     scale_coord
         bcs     @out
         cmp     #128
         bcs     @out
@@ -435,29 +441,72 @@ project_point:
         eor     #$FF                    ; x = 128 - off
         sec
         adc     #VIEW_CX
-        jmp     :++
+        jmp     @xset
 :       clc                             ; x = 128 + off
         adc     #VIEW_CX
-:       sta     px
-
-        lda     wy
+@xset:  sta     px
+        lda     wy                      ; y the same way; up is +y
         ldy     wy+1
-        jsr     project
+        jsr     scale_coord
         bcs     @out
         cmp     #VIEW_HALF_H+1
         bcs     @out
         ldy     neg_flag
         bne     :+
-        eor     #$FF                    ; up is +y: screen y = 79 - off
+        eor     #$FF                    ; above the centre: y = 79 - off
         sec
         adc     #VIEW_CY
-        jmp     :++
-:       clc                             ; screen y = 79 + off
+        jmp     @yset
+:       clc                             ; below: y = 79 + off
         adc     #VIEW_CY
-:       sta     py
+@yset:  sta     py
         clc
         rts
 @out:   sec
+        rts
+
+; scale_coord: A/Y = a signed 16-bit coordinate (low/high). A = |c| * r / 256 with carry
+; clear, or carry set when that is 256 or more; neg_flag = 1 when c < 0. r is the factor
+; project_point patched into mul_r. |c| up to 511 takes one short multiply.
+scale_coord:
+        sta     off_lo
+        sty     off_hi
+        lda     #0
+        sta     neg_flag
+        cpy     #$80
+        bcc     :+
+        inc     neg_flag
+        sec
+        lda     #0
+        sbc     off_lo
+        sta     off_lo
+        lda     #0
+        sbc     off_hi
+        sta     off_hi
+:       ldy     off_lo
+        lda     off_hi
+        bne     :+
+        jsr     mul_r                   ; below 256
+        clc
+        rts
+:       cmp     #1
+        bne     @big
+        jsr     mul_r                   ; 256-511: r + (low byte * r) / 256
+        clc
+        adc     recip_val
+        rts
+@big:   ldy     recip_val               ; 512 and up: high byte * r + (low byte * r) / 256
+        jsr     umul8
+        lda     mul_hi
+        bne     @far
+        lda     mul_lo
+        sta     acc_lo
+        ldy     off_lo
+        jsr     mul_r
+        clc
+        adc     acc_lo
+        rts
+@far:   sec
         rts
 
 ; widen_bbox: the object's bounding box takes in vertex X.
@@ -477,6 +526,16 @@ widen_bbox:
         bcc     :+
         sta     bb_maxx
 :       rts
+
+; mul_r: A = (Y * the factor patched in by project_point) / 256, both unsigned bytes.
+; The quarter-square tables as in umul8, with only the high byte kept.
+mul_r:
+        sec
+mr_p1:  lda     sq1_lo,y
+mr_p2:  sbc     sq2_lo,y
+mr_p3:  lda     sq1_hi,y
+mr_p4:  sbc     sq2_hi,y
+        rts
 
 ; project: A/Y = a signed 16-bit coordinate (low/high). Returns A = |c| * recip_val / 256
 ; with carry clear, or carry set when that is 256 or more. neg_flag = 1 when c < 0.
