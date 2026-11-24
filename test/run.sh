@@ -19,7 +19,9 @@ for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.pr
          build/test/events.prg build/test/events-control.prg build/test/ring.prg \
          build/test/ring-control.prg build/test/convoy.prg build/test/convoy-control.prg \
          build/test/bench-6.prg build/test/clip-control.prg build/test/hidden-control.prg \
-         build/test/heat.prg build/test/heat-control.prg; do
+         build/test/heat.prg build/test/heat-control.prg build/test/escort.prg \
+         build/test/escort-control.prg build/test/escort-lost.prg \
+         build/test/escort-lost-control.prg; do
   [ -f "$root/$f" ] || { echo "preflight: $f missing (run ./build.sh)"; fail=1; }
 done
 [ "$fail" = 0 ] || exit 2
@@ -119,6 +121,10 @@ if [ -x "$k64host" ] && [ -f "$core" ]; then
   check_host map-fire-jumps 1000 state 2 --hold 450 460 0 b 1 --hold 600 610 0 b 1
   # Control: A is not fire, so the title stays (state 0; checked before the attract demo).
   check_host other-button-does-not 600 state 0 --hold 450 460 0 a 1
+  # On the map, right switches a convoy contract from a raid to an escort; the control
+  # with down (the next lane) leaves it a raid.
+  check_host contract-escort 560 conv_side 1 --hold 450 460 0 b 1 --hold 520 525 0 right 1
+  check_host contract-control 560 conv_side 0 --hold 450 460 0 b 1 --hold 520 525 0 down 1
   # In the sector, fire held for 60 frames and let go: a charged shot; held for 10 (less
   # than the charge takes), the control: none.
   check_host charged-shot 950 heavy_n 1 --hold 450 460 0 b 1 --hold 600 610 0 b 1 \
@@ -190,6 +196,15 @@ check ring-control 124 --cycles 150000000 --debugcart --autostart "$root/build/t
 # A convoy: a freighter is destroyed; with the crosshair held in a corner, none is.
 check convoy 0 --cycles 150000000 --debugcart --autostart "$root/build/test/convoy.prg"
 check convoy-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/convoy-control.prg"
+# An escort: the test gets a freighter across and shoots two attackers down; with the
+# crosshair held in a corner, it shoots none. Left unguarded (the crosshair still in the
+# middle, no shots) the attackers destroy a freighter; the control without their fire
+# loses none.
+check escort 0 --cycles 150000000 --debugcart --autostart "$root/build/test/escort.prg"
+check escort-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/escort-control.prg"
+check escort-lost 0 --cycles 150000000 --debugcart --autostart "$root/build/test/escort-lost.prg"
+check escort-lost-control 124 --cycles 150000000 --debugcart \
+  --autostart "$root/build/test/escort-lost-control.prg"
 # The Dreadnought: aiming at its weak points destroys it; the control aiming off cannot
 # (the shields run out first: 2, or the time: 124).
 check boss 0 --cycles 150000000 --debugcart --autostart "$root/build/test/boss.prg"

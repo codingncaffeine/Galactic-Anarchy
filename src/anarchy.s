@@ -294,7 +294,14 @@ pick_spawn_kind:
         ldy     faction
         cpy     #F_FIELD                ; rivals only in a faction's sector
         bcs     @pool
-        lda     danger                  ; and not in the very first sectors
+        lda     mission                 ; an escort: all of them, from the attackers
+        cmp     #MIS_ESCORT
+        bne     :+
+        ldy     esc_foe
+        lda     #1
+        sta     spawn_side
+        bne     @pool
+:       lda     danger                  ; and not in the very first sectors
         beq     @pool
         jsr     hotter_rival            ; heat_lv: how hot the hotter rival is
         lda     heat_lv
@@ -495,6 +502,9 @@ centi_tick:
 
 ; duels_tick: once per tick in a sector.
 duels_tick:
+.ifdef NO_DUELS
+        rts                             ; (a test control: nobody fights anybody)
+.endif
         lda     duel_t
         beq     :+
         dec     duel_t
@@ -502,7 +512,11 @@ duels_tick:
         beq     :+
         rts
 :       lda     #40
-        sta     duel_wait
+        ldx     mission                 ; an escort's attackers shoot more often
+        cpx     #MIS_ESCORT
+        bne     :+
+        lda     #ESCORT_DUEL
+:       sta     duel_wait
         jsr     duel_find_side          ; a rival that fires...
         bcs     @none
         lda     #1
@@ -521,9 +535,13 @@ duels_tick:
         ora     #1
         sta     events
         jsr     sfx_hit
-        jsr     rand                    ; who is hit
+        jsr     rand                    ; who is hit (in an escort, the freighter)
         and     #1
-        tax
+        ldx     mission
+        cpx     #MIS_ESCORT
+        bne     :+
+        lda     #1
+:       tax
         lda     duel_a,x
         tax
         dec     en_hp,x

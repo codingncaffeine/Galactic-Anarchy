@@ -53,6 +53,12 @@ txt_boss:       scr "DREADNOUGHT   "
                 .byte 0
 txt_route:      scr "NEXT"
                 .byte 0
+txt_raid:       scr "RAID  "
+                .byte 0
+txt_escort_k:   scr "ESCORT"
+                .byte 0
+txt_none:       scr "      "
+                .byte 0
 txt_danger:     scr "DANGER"
                 .byte 0
 
@@ -253,6 +259,7 @@ map_show_choice:
         jsr     print_str
         print_at PANEL_ROW+2, 1, txt_route
         print_at PANEL_ROW+2, 22, txt_danger
+        jsr     contract_label
         jsr     sel_danger
         sta     danger
         set_pos PANEL_ROW+2, 29
@@ -260,6 +267,21 @@ map_show_choice:
         clc
         adc     #1
         jmp     print_2digits
+
+; contract_label: for a convoy, how it is taken (left / right on the map changes it).
+contract_label:
+        jsr     sel_node
+        lda     node_kind,x
+        cmp     #MIS_CONVOY
+        beq     :+
+        print_at PANEL_ROW+2, 32, txt_none
+        rts
+:       lda     conv_side
+        bne     :+
+        print_at PANEL_ROW+2, 32, txt_raid
+        rts
+:       print_at PANEL_ROW+2, 32, txt_escort_k
+        rts
 
 ; sel_node: X = the node index of the selected candidate.
 sel_node:
@@ -315,13 +337,20 @@ map_tick:
         jmp     @moved
 :       lda     map_tmp
         and     #%00010                 ; down
-        beq     @fire
+        beq     @side
         inc     map_sel
         lda     map_sel
         cmp     map_cand_n
         bcc     @moved
         lda     #0
         sta     map_sel
+        jmp     @moved
+@side:  lda     map_tmp                 ; left / right: a convoy raided or escorted
+        and     #%01100
+        beq     @fire
+        lda     conv_side
+        eor     #1
+        sta     conv_side
 @moved: jsr     map_show_choice
 @fire:  lda     fire_new
         bne     :+
@@ -332,7 +361,12 @@ map_tick:
         sta     boss_fight
         jsr     sel_node                ; the jump
         lda     node_kind,x
-        sta     mission
+        cmp     #MIS_CONVOY
+        bne     :+
+        ldy     conv_side               ; taken as an escort
+        beq     :+
+        lda     #MIS_ESCORT
+:       sta     mission
         lda     node_faction,x
         sta     faction
         cmp     #F_RING

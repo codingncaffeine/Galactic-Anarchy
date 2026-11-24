@@ -218,7 +218,7 @@ game_main:
   .elseif .defined(TEST_HEAT)
         jsr     game_new                ; a quiet Concord sector at once, the Concord
         lda     #60                     ; already at heat level 6
-        sta     heat+F_CONCORD
+        sta     heat                    ; (F_CONCORD)
         lda     #MIS_FIGHT
         sta     mission
         lda     #F_CONCORD
@@ -579,7 +579,29 @@ play_tick:
 :       lda     kills                   ; quota reached: back to the map
         cmp     quota
         bcc     :+
+        jsr     escort_won
         jmp     map_after_sector
+:       rts
+
+; escort_safe: a freighter got across (slot X); in an escort, a bonus. Keeps X.
+escort_safe:
+        lda     mission
+        cmp     #MIS_ESCORT
+        bne     :+
+        txa
+        pha
+        inc     conv_safe
+        lda     events
+        ora     #16
+        sta     events
+        lda     #ESCORT_BONUS
+        jsr     add_score_x10
+        lda     #1
+        sta     panel_dirty
+        jsr     escort_count
+        jsr     sfx_hit
+        pla
+        tax
 :       rts
 
 ; laser_tick: the beams' time runs out.
@@ -793,23 +815,40 @@ destroy_enemy:
         ldy     en_kind,x
         lda     kind_flags,y            ; (tests: a freighter destroyed)
         and     #KF_CARGO
-        beq     :+
+        beq     @fight
         lda     events
         ora     #8
         sta     events
-:       lda     by_other                ; destroyed by another enemy: no score
-        bne     :+
+        lda     mission                 ; an escorted freighter: lost, whoever shot it
+        cmp     #MIS_ESCORT
+        bne     @fight
+        inc     conv_lost
+        lda     events
+        ora     #32
+        sta     events
+        jsr     escort_count
+        lda     by_other
+        bne     @gone
+        ldx     hit_best                ; (the player's shot: its faction is angry)
+        ldy     en_kind,x
+        jsr     heat_kill
+        jmp     @gone
+@fight: lda     by_other                ; destroyed by another enemy: no score
+        bne     @other
         lda     kind_score,y            ; score += kind_score * 10
         jsr     add_score_x10
         ldx     hit_best                ; and the ship's faction is hotter
         ldy     en_kind,x
         jsr     heat_kill
-:
-        inc     kills
+        jmp     :+
+@other: lda     mission                 ; another's kill: toward the quota, except
+        cmp     #MIS_ESCORT             ; in an escort (the attackers' own losses)
+        beq     @gone
+:       inc     kills
         lda     by_other                ; the player's own kills, for the tests
-        bne     :+
+        bne     @gone
         inc     kills_total
-:       lda     #1
+@gone:  lda     #1
         sta     panel_dirty
         jsr     sfx_explode
         ldx     hit_best
@@ -1125,6 +1164,7 @@ enemies_tick:
         bcc     @next
         lda     #0
         sta     obj_active,x
+        jsr     escort_safe
         jmp     @next
 :       lda     obj_z_hi,x              ; past the player?
         bmi     @gone
@@ -2043,6 +2083,8 @@ game_reset:
         lda     #SHIELD_FULL
         sta     shield
         jsr     heat_reset
+        lda     #0                      ; convoys are raided unless the player says
+        sta     conv_side
         jsr     panel_clear
         print_at PANEL_ROW+1, 1, txt_score
         print_at PANEL_ROW+3, 1, txt_kills
@@ -2198,6 +2240,17 @@ test_autoplay:
         lda     rings_threaded          ; three rings threaded
         cmp     #3
         bcc     :+
+    .elseif TEST_MISSION = 3 && .defined(TEST_NO_FIRE)
+        lda     events                  ; (MIS_ESCORT) unguarded: a freighter lost
+        and     #32
+        beq     :+
+    .elseif TEST_MISSION = 3            ; (MIS_ESCORT) a freighter across, two attackers
+        lda     events                  ; shot down
+        and     #16
+        beq     :+
+        lda     kills_total
+        cmp     #2
+        bcc     :+
     .else
         lda     events                  ; a freighter destroyed
         and     #8
@@ -2241,6 +2294,12 @@ autopilot:
         lda     kind_flags,y
         and     #KF_ARMOR
         bne     @next
+        lda     mission                 ; nor at the freighters it escorts
+        cmp     #MIS_ESCORT
+        bne     :+
+        lda     kind_flags,y
+        and     #KF_CARGO
+        bne     @next
 :
         lda     obj_bb_x0,x
         cmp     #$FF
@@ -2249,6 +2308,13 @@ autopilot:
         bpl     @find
         rts
 @aim:
+  .ifdef TEST_NO_FIRE
+        lda     #VIEW_CX                ; a test: the crosshair still, no shots
+        sta     cross_x
+        lda     #VIEW_CY
+        sta     cross_y
+        rts
+  .endif
   .ifdef TEST_AIM_CORNER
         lda     #2                      ; the control: the crosshair in a corner
         sta     cross_x

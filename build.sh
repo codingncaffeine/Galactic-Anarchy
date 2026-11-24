@@ -48,6 +48,11 @@ assemble build/test/ring.prg -D TEST_PLAY=1 -D TEST_MISSION=2
 assemble build/test/ring-control.prg -D TEST_PLAY=1 -D TEST_MISSION=2 -D TEST_AIM_CORNER=1
 assemble build/test/convoy.prg -D TEST_PLAY=1 -D TEST_MISSION=1
 assemble build/test/convoy-control.prg -D TEST_PLAY=1 -D TEST_MISSION=1 -D TEST_AIM_CORNER=1
+assemble build/test/escort.prg -D TEST_PLAY=1 -D TEST_MISSION=3
+assemble build/test/escort-control.prg -D TEST_PLAY=1 -D TEST_MISSION=3 -D TEST_AIM_CORNER=1
+assemble build/test/escort-lost.prg -D TEST_PLAY=1 -D TEST_MISSION=3 -D TEST_NO_FIRE=1
+assemble build/test/escort-lost-control.prg -D TEST_PLAY=1 -D TEST_MISSION=3 -D TEST_NO_FIRE=1 \
+  -D NO_DUELS=1
 assemble build/test/boss.prg -D TEST_PLAY=1 -D TEST_BOSS=1
 assemble build/test/boss-control.prg -D TEST_PLAY=1 -D TEST_BOSS=1 -D TEST_AIM_OFF=60
 for scene in 1 2 3 5 6; do
