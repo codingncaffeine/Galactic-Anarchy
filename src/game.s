@@ -1927,6 +1927,7 @@ panel_clear:
         print_at PANEL_ROW+1, 1, txt_blank
         print_at PANEL_ROW+2, 1, txt_blank
         print_at PANEL_ROW+3, 1, txt_blank
+        print_at PANEL_ROW+4, 1, txt_blank
         rts
 
 panel_refresh:
