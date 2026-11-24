@@ -31,9 +31,12 @@ TITLE_TABLE     = 300
 KF_FIRES        = $01                   ; flags
 KF_SPLITS       = $02                   ; breaks into the next kind (rocks)
 KF_ARMOR        = $04                   ; shots do it no harm (the Dreadnought's hull)
+KF_GATE         = $08                   ; a station ring: threaded, not collided with
+KF_CARGO        = $10                   ; a freighter: leaves at the right-hand side
 TURN_BANK       = 0                     ; faces the player, banks as it weaves
 TURN_WOBBLE     = 1                     ; faces the player, sways
 TURN_TUMBLE     = 2                     ; tumbles
+TURN_NONE       = 3                     ; placed by its mission
 
 K_LANCER  = 0
 K_RAIDER  = 1
@@ -52,23 +55,28 @@ K_POD     = 13
 K_HULL    = 14
 K_CENTI   = 15
 K_SEG     = 16
+K_GATE    = 17
+K_FREIGHTER = 18
 
         .segment "RODATA"
 kind_model:     .byte MODEL_LANCER, MODEL_RAIDER, MODEL_GUNSHIP, MODEL_MAULER
                 .byte MODEL_SKITTER, MODEL_HORNET, MODEL_MOTH, MODEL_MANTIS
                 .byte MODEL_HIVE, MODEL_MINE, MODEL_ROCK_L, MODEL_ROCK_M, MODEL_ROCK_S
                 .byte MODEL_POD, MODEL_DREAD_MID, MODEL_CENTI_HEAD, MODEL_CENTI_SEG
-kind_hp:        .byte 1, 1, 3, 2,  1, 1, 1, 2,  4, 1, 2, 1, 1,  POD_HP, 255, 2, 1
-kind_score:     .byte 10, 15, 30, 25,  12, 15, 10, 20,  50, 5, 5, 3, 2,  30, 0, 40, 5
+                .byte MODEL_GATE, MODEL_FREIGHTER
+kind_hp:        .byte 1, 1, 3, 2,  1, 1, 1, 2,  4, 1, 2, 1, 1,  POD_HP, 255, 2, 1,  255, 4
+kind_score:     .byte 10, 15, 30, 25,  12, 15, 10, 20,  50, 5, 5, 3, 2,  30, 0, 40, 5,  0, 80
 kind_flags:     .byte KF_FIRES, KF_FIRES, KF_FIRES, KF_FIRES
                 .byte KF_FIRES, KF_FIRES, 0, KF_FIRES
                 .byte 0, 0, KF_SPLITS, KF_SPLITS, 0
                 .byte KF_FIRES, KF_ARMOR, KF_FIRES, 0
-kind_weave:     .byte 31, 15, 63, 63,  15, 7, 15, 31,  0, 0, 0, 0, 0,  0, 0, 15, 0
+                .byte KF_ARMOR | KF_GATE, KF_CARGO
+kind_weave:     .byte 31, 15, 63, 63,  15, 7, 15, 31,  0, 0, 0, 0, 0,  0, 0, 15, 0,  0, 0
 kind_turn:      .byte TURN_BANK, TURN_BANK, TURN_BANK, TURN_BANK
                 .byte TURN_WOBBLE, TURN_WOBBLE, TURN_WOBBLE, TURN_WOBBLE
                 .byte TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE
                 .byte TURN_TUMBLE, TURN_TUMBLE, TURN_WOBBLE, TURN_WOBBLE
+                .byte TURN_NONE, TURN_NONE
 
 
         .segment "BSS"
@@ -145,6 +153,8 @@ game_main:
         jsr     game_new                ; straight into a Dreadnought fight
         lda     #F_BOSS
         sta     faction
+        lda     #MIS_FIGHT
+        sta     mission
         lda     #3
         sta     danger
         lda     #0
@@ -153,10 +163,31 @@ game_main:
         jsr     boss_start
         lda     #99                     ; this test is about winning the fight
         sta     shield
+  .elseif .defined(TEST_MISSION)
+        jsr     game_new                ; a Ring Run or a convoy at once
+        lda     #0
+        sta     events
+        sta     rings_threaded
+        lda     #TEST_MISSION
+        sta     mission
+        lda     #F_RING
+        ldx     mission
+        cpx     #MIS_RING
+        beq     :+
+        lda     #F_CORSAIR
+:       sta     faction
+        lda     #2
+        sta     danger
+        lda     #0
+        sta     map_col
+        lda     #99
+        sta     shield
+        jsr     ready_start
   .elseif .defined(TEST_EVENTS)
         jsr     game_new                ; a dangerous Swarm sector at once
         lda     #0
         sta     events
+        sta     mission
         lda     #F_SWARM
         sta     faction
         lda     #5
@@ -424,6 +455,7 @@ ready_start:
         ldx     faction                 ; the viewport in the faction's colour
         lda     faction_color,x
         jsr     view_color
+        jsr     mission_start
         lda     #1
         sta     panel_dirty
         print_at PANEL_ROW+2, 1, txt_blank
@@ -447,6 +479,7 @@ ready_tick:
         lda     #20
         sta     spawn_t
         print_at PANEL_ROW+2, 1, txt_blank
+        jsr     ring_panel
 :       rts
 
 ; =======================================================================================
@@ -459,7 +492,14 @@ play_tick:
         jsr     enemies_tick
         jsr     centi_tick
         jsr     duels_tick
-        jsr     bolts_tick
+        jsr     ring_tick               ; the reactor ran out?
+        bcc     :+
+        lda     shield
+        bne     @ringend
+        jmp     over_start
+@ringend:
+        jmp     map_after_sector
+:       jsr     bolts_tick
         jsr     bursts_tick
         lda     laser_t
         beq     :+
@@ -585,7 +625,13 @@ destroy_enemy:
         jsr     burst_add
         ldx     hit_best
         ldy     en_kind,x
-        lda     by_other                ; destroyed by another enemy: no score
+        lda     kind_flags,y            ; (tests: a freighter destroyed)
+        and     #KF_CARGO
+        beq     :+
+        lda     events
+        ora     #8
+        sta     events
+:       lda     by_other                ; destroyed by another enemy: no score
         bne     :+
         lda     kind_score,y            ; score += kind_score * 10
         jsr     add_score_x10
@@ -702,7 +748,10 @@ setup_kind:
 
 ; spawn_enemy: a new arrival from the sector's pool, far ahead at a random spot.
 spawn_enemy:
-        jsr     free_slot
+        jsr     mission_spawn           ; rings and freighters
+        bcs     :+
+        rts
+:       jsr     free_slot
         bcs     @no
         stx     g_tmp+1
         jsr     pick_spawn_kind
@@ -833,9 +882,9 @@ enemies_tick:
         sta     obj_roll,x
 
         ldy     en_kind,x               ; close in: ships and insects veer off to the
-        lda     kind_turn,y             ; side they are on; rocks keep coming
+        lda     kind_turn,y             ; side they are on; rocks and rings keep coming
         cmp     #TURN_TUMBLE
-        beq     @onward
+        bcs     @onward
         lda     obj_z_hi,x
         cmp     #3
         bcs     @onward
@@ -895,13 +944,30 @@ enemies_tick:
         bcs     @nofire
         jsr     bolt_spawn
 @nofire:
-        lda     obj_z_hi,x              ; past the player?
+        ldy     en_kind,x               ; a freighter past the right-hand side: gone
+        lda     kind_flags,y
+        and     #KF_CARGO
+        beq     :+
+        lda     obj_x_hi,x
+        bmi     @next
+        cmp     #4
+        bcc     @next
+        lda     #0
+        sta     obj_active,x
+        jmp     @next
+:       lda     obj_z_hi,x              ; past the player?
         bmi     @gone
         bne     @next
         lda     obj_z_lo,x
         cmp     #200
         bcs     @next
-@gone:  lda     #0
+@gone:  ldy     en_kind,x               ; a ring: threaded or missed
+        lda     kind_flags,y
+        and     #KF_GATE
+        beq     :+
+        jsr     gate_pass
+        jmp     @next
+:       lda     #0
         sta     obj_active,x
         lda     obj_x_hi,x              ; on a collision course: the shield takes it
         jsr     near_centre
@@ -1780,7 +1846,19 @@ txt_over:       scr "GAME  OVER"
 TEST_AIM_OFF = 0
 .endif
 test_autoplay:
-  .ifdef TEST_EVENTS
+  .ifdef TEST_MISSION
+        lda     #99
+        sta     shield
+    .if TEST_MISSION = 2                ; (MIS_RING, defined later in missions.s)
+        lda     rings_threaded          ; three rings threaded
+        cmp     #3
+        bcc     :+
+    .else
+        lda     events                  ; a freighter destroyed
+        and     #8
+        beq     :+
+    .endif
+  .elseif .defined(TEST_EVENTS)
         lda     #99                     ; (never out of shields)
         sta     shield
         lda     events                  ; both a duel and a centipede seen
@@ -1805,17 +1883,28 @@ test_autoplay:
         beq     @next
         lda     obj_dot,x
         bne     @next
-        ldy     en_kind,x               ; never at armour
+        ldy     en_kind,x               ; never at armour, but at a ring in a Ring Run
+        lda     kind_flags,y
+        and     #KF_GATE
+        bne     :+
         lda     kind_flags,y
         and     #KF_ARMOR
         bne     @next
+:
         lda     obj_bb_x0,x
         cmp     #$FF
         bne     @aim
 @next:  dex
         bpl     @find
         rts
-@aim:   clc
+@aim:
+  .ifdef TEST_AIM_CORNER
+        lda     #2                      ; the control: the crosshair in a corner
+        sta     cross_x
+        sta     cross_y
+        jmp     @fire
+  .endif
+        clc
         adc     obj_bb_x1,x
         ror
         clc
@@ -1828,7 +1917,7 @@ test_autoplay:
         adc     obj_bb_y1,x
         ror
         sta     cross_y
-        lda     fire_wait
+@fire:  lda     fire_wait
         bne     :+
         lda     #1
         sta     fire_new

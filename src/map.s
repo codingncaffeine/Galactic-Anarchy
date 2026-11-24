@@ -14,6 +14,7 @@ F_CORSAIR       = 1
 F_SWARM         = 2
 F_FIELD         = 3                     ; asteroid field, nobody's
 F_BOSS          = 4                     ; the Dreadnought
+F_RING          = 5                     ; a derelict station: the Ring Run
 
         .segment "RODATA"
 ; Node centres in viewport pixels, by column and by row.
@@ -22,13 +23,23 @@ map_y:          .byte 22, 78, 134
 faction_pool_lo: .byte <pool_concord, <pool_corsair, <pool_swarm, <pool_field
 faction_pool_hi: .byte >pool_concord, >pool_corsair, >pool_swarm, >pool_field
 ; Cell colours (foreground in the high nibble): cyan, light red, yellow, light grey, purple.
-faction_color:  .byte $30, $A0, $70, $F0, $40
+faction_color:  .byte $30, $A0, $70, $F0, $40, $D0
 pool_concord:   .byte K_LANCER, K_LANCER, K_GUNSHIP, K_LANCER, K_MINE, K_LANCER, K_GUNSHIP, K_ROCK_M
 pool_corsair:   .byte K_RAIDER, K_RAIDER, K_MAULER, K_RAIDER, K_ROCK_L, K_RAIDER, K_MAULER, K_MINE
 pool_swarm:     .byte K_SKITTER, K_HORNET, K_MOTH, K_SKITTER, K_MANTIS, K_HORNET, K_CENTI, K_HIVE
 pool_field:     .byte K_ROCK_L, K_ROCK_L, K_ROCK_M, K_ROCK_L, K_MINE, K_ROCK_M, K_RAIDER, K_ROCK_L
-faction_name_lo: .byte <txt_concord, <txt_corsair, <txt_swarm, <txt_field, <txt_boss
-faction_name_hi: .byte >txt_concord, >txt_corsair, >txt_swarm, >txt_field, >txt_boss
+faction_name_lo: .byte <txt_concord, <txt_corsair, <txt_swarm, <txt_field, <txt_boss, <txt_ring
+faction_name_hi: .byte >txt_concord, >txt_corsair, >txt_swarm, >txt_field, >txt_boss, >txt_ring
+convoy_name_lo: .byte <txt_c_concord, <txt_c_corsair, <txt_c_swarm
+convoy_name_hi: .byte >txt_c_concord, >txt_c_corsair, >txt_c_swarm
+txt_ring:       scr "DERELICT RINGS"
+                .byte 0
+txt_c_concord:  scr "CONCORD CONVOY"
+                .byte 0
+txt_c_corsair:  scr "CORSAIR CONVOY"
+                .byte 0
+txt_c_swarm:    scr "SWARM CONVOY  "
+                .byte 0
 txt_concord:    scr "CONCORD SPACE "
                 .byte 0
 txt_corsair:    scr "CORSAIR SPACE "
@@ -48,6 +59,7 @@ txt_danger:     scr "DANGER"
         .segment "BSS"
 node_faction:   .res MAP_NODES          ; index = column * 3 + row; $FF = no sector
 node_links:     .res MAP_NODES          ; bit r: a lane to row r of the next column
+node_kind:      .res MAP_NODES          ; MIS_FIGHT or MIS_CONVOY (rings have F_RING)
 
         .segment "CODE"
 
@@ -60,6 +72,22 @@ map_new:
         beq     :+
         jsr     rand_faction
 :       sta     node_faction,x
+        jsr     rand                    ; 1 in 8 a derelict station instead
+        and     #7
+        bne     :+
+        lda     #F_RING
+        sta     node_faction,x
+:       lda     #MIS_FIGHT              ; a faction's sector: 1 in 4 a convoy
+        sta     node_kind,x
+        lda     node_faction,x
+        cmp     #F_FIELD
+        bcs     :+
+        jsr     rand
+        and     #3
+        bne     :+
+        lda     #MIS_CONVOY
+        sta     node_kind,x
+:
         jsr     rand                    ; lanes: the same row, one off, or both
         and     #3
         tay
@@ -203,12 +231,23 @@ map_show_choice:
         lda     map_y,y
         sta     cross_y
         jsr     sel_node
+        lda     node_kind,x
+        cmp     #MIS_CONVOY
+        bne     :+
         lda     node_faction,x
+        tax
+        lda     convoy_name_lo,x
+        sta     str_ptr
+        lda     convoy_name_hi,x
+        sta     str_ptr+1
+        jmp     :++
+:       lda     node_faction,x
         tax
         lda     faction_name_lo,x
         sta     str_ptr
         lda     faction_name_hi,x
         sta     str_ptr+1
+:
         set_pos PANEL_ROW+2, 6
         jsr     print_str
         print_at PANEL_ROW+2, 1, txt_route
@@ -291,8 +330,27 @@ map_tick:
         sta     cross_lock
         sta     boss_fight
         jsr     sel_node                ; the jump
+        lda     node_kind,x
+        sta     mission
         lda     node_faction,x
         sta     faction
+        cmp     #F_RING
+        bne     :+
+        lda     #MIS_RING
+        sta     mission
+:
+.ifdef TEST_PLAY
+  .ifndef TEST_MISSION
+        lda     #MIS_FIGHT              ; the general play test fights
+        sta     mission
+        lda     faction
+        cmp     #F_RING
+        bne     :+
+        lda     #F_CORSAIR
+        sta     faction
+:
+  .endif
+.endif
         jsr     sel_danger
         sta     danger
         jsr     next_col

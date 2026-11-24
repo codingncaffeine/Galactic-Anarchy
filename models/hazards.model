@@ -27,3 +27,33 @@ model rock_s
 title rock fragment
 roster
 asteroid small 40 5
+
+model gate
+title station ring
+roster
+# A ring of the derelict station: thread it with the crosshair.
+ring r 8 112 0
+ring s 4 84 0
+loop r*
+e r0 s0
+e r2 s1
+e r4 s2
+e r6 s3
+
+model freighter
+title freighter
+roster
+# A convoy freighter: a long hull with cargo pods along its back and a raised bridge.
+m nf    14  12  110
+m nb    14 -12  110
+m af    20  16 -110
+m ab    20 -16 -110
+v bridge 0  34  -80
+m pod   22  28   10
+loop nf.l nf.r nb.r nb.l
+loop af.l af.r ab.r ab.l
+me nf af
+me nb ab
+e af.l bridge af.r
+me pod nf
+me pod af

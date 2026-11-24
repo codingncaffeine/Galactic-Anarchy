@@ -16,7 +16,8 @@ for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.pr
          build/test/mul.prg build/test/mul-control.prg build/test/play.prg build/test/play-control.prg \
          build/test/boss.prg build/test/boss-control.prg build/test/table.prg \
          build/test/disk-save.prg build/test/disk-load.prg build/galactic-anarchy.d64 \
-         build/test/events.prg build/test/events-control.prg; do
+         build/test/events.prg build/test/events-control.prg build/test/ring.prg \
+         build/test/ring-control.prg build/test/convoy.prg build/test/convoy-control.prg; do
   [ -f "$root/$f" ] || { echo "preflight: $f missing (run ./build.sh)"; fail=1; }
 done
 [ "$fail" = 0 ] || exit 2
@@ -140,6 +141,12 @@ check play-control 124 --cycles 150000000 --debugcart --autostart "$root/build/t
 # comes; the control without rivals never sees a duel (no result).
 check events 0 --cycles 150000000 --debugcart --autostart "$root/build/test/events.prg"
 check events-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/events-control.prg"
+# The Ring Run: keeping the crosshair on the rings threads three; held in a corner, none.
+check ring 0 --cycles 150000000 --debugcart --autostart "$root/build/test/ring.prg"
+check ring-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/ring-control.prg"
+# A convoy: a freighter is destroyed; with the crosshair held in a corner, none is.
+check convoy 0 --cycles 150000000 --debugcart --autostart "$root/build/test/convoy.prg"
+check convoy-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/convoy-control.prg"
 # The Dreadnought: aiming at its weak points destroys it; the control aiming off cannot
 # (the shields run out first: 2, or the time: 124).
 check boss 0 --cycles 150000000 --debugcart --autostart "$root/build/test/boss.prg"
