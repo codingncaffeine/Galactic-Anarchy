@@ -25,7 +25,7 @@ faction_pool_hi: .byte >pool_concord, >pool_corsair, >pool_swarm, >pool_field
 faction_color:  .byte $30, $A0, $70, $F0, $40
 pool_concord:   .byte K_LANCER, K_LANCER, K_GUNSHIP, K_LANCER, K_MINE, K_LANCER, K_GUNSHIP, K_ROCK_M
 pool_corsair:   .byte K_RAIDER, K_RAIDER, K_MAULER, K_RAIDER, K_ROCK_L, K_RAIDER, K_MAULER, K_MINE
-pool_swarm:     .byte K_SKITTER, K_HORNET, K_MOTH, K_SKITTER, K_MANTIS, K_HORNET, K_MOTH, K_HIVE
+pool_swarm:     .byte K_SKITTER, K_HORNET, K_MOTH, K_SKITTER, K_MANTIS, K_HORNET, K_CENTI, K_HIVE
 pool_field:     .byte K_ROCK_L, K_ROCK_L, K_ROCK_M, K_ROCK_L, K_MINE, K_ROCK_M, K_RAIDER, K_ROCK_L
 faction_name_lo: .byte <txt_concord, <txt_corsair, <txt_swarm, <txt_field, <txt_boss
 faction_name_hi: .byte >txt_concord, >txt_corsair, >txt_swarm, >txt_field, >txt_boss

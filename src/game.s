@@ -50,23 +50,25 @@ K_ROCK_M  = 11
 K_ROCK_S  = 12
 K_POD     = 13
 K_HULL    = 14
+K_CENTI   = 15
+K_SEG     = 16
 
         .segment "RODATA"
 kind_model:     .byte MODEL_LANCER, MODEL_RAIDER, MODEL_GUNSHIP, MODEL_MAULER
                 .byte MODEL_SKITTER, MODEL_HORNET, MODEL_MOTH, MODEL_MANTIS
                 .byte MODEL_HIVE, MODEL_MINE, MODEL_ROCK_L, MODEL_ROCK_M, MODEL_ROCK_S
-                .byte MODEL_POD, MODEL_DREAD_MID
-kind_hp:        .byte 1, 1, 3, 2,  1, 1, 1, 2,  4, 1, 2, 1, 1,  POD_HP, 255
-kind_score:     .byte 10, 15, 30, 25,  12, 15, 10, 20,  50, 5, 5, 3, 2,  30, 0
+                .byte MODEL_POD, MODEL_DREAD_MID, MODEL_CENTI_HEAD, MODEL_CENTI_SEG
+kind_hp:        .byte 1, 1, 3, 2,  1, 1, 1, 2,  4, 1, 2, 1, 1,  POD_HP, 255, 2, 1
+kind_score:     .byte 10, 15, 30, 25,  12, 15, 10, 20,  50, 5, 5, 3, 2,  30, 0, 40, 5
 kind_flags:     .byte KF_FIRES, KF_FIRES, KF_FIRES, KF_FIRES
                 .byte KF_FIRES, KF_FIRES, 0, KF_FIRES
                 .byte 0, 0, KF_SPLITS, KF_SPLITS, 0
-                .byte KF_FIRES, KF_ARMOR
-kind_weave:     .byte 31, 15, 63, 63,  15, 7, 15, 31,  0, 0, 0, 0, 0,  0, 0
+                .byte KF_FIRES, KF_ARMOR, KF_FIRES, 0
+kind_weave:     .byte 31, 15, 63, 63,  15, 7, 15, 31,  0, 0, 0, 0, 0,  0, 0, 15, 0
 kind_turn:      .byte TURN_BANK, TURN_BANK, TURN_BANK, TURN_BANK
                 .byte TURN_WOBBLE, TURN_WOBBLE, TURN_WOBBLE, TURN_WOBBLE
                 .byte TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE
-                .byte TURN_TUMBLE, TURN_TUMBLE
+                .byte TURN_TUMBLE, TURN_TUMBLE, TURN_WOBBLE, TURN_WOBBLE
 
 
         .segment "BSS"
@@ -151,6 +153,19 @@ game_main:
         jsr     boss_start
         lda     #99                     ; this test is about winning the fight
         sta     shield
+  .elseif .defined(TEST_EVENTS)
+        jsr     game_new                ; a dangerous Swarm sector at once
+        lda     #0
+        sta     events
+        lda     #F_SWARM
+        sta     faction
+        lda     #5
+        sta     danger
+        lda     #0
+        sta     map_col
+        lda     #99
+        sta     shield
+        jsr     ready_start
   .else
         jsr     game_new                ; the test plays at once
   .endif
@@ -190,6 +205,7 @@ game_loop:
         jsr     draw_stars
         jsr     draw_edges
         jsr     draw_bursts
+        jsr     draw_duel
         jsr     draw_laser
         jsr     place_bolts
         jsr     panel_refresh
@@ -357,6 +373,7 @@ ready_start:
         sta     state_timer
         jsr     clear_slots
         jsr     bolts_clear
+        jsr     anarchy_reset
         lda     #0
         sta     kills
         inc     sector
@@ -440,6 +457,8 @@ play_tick:
         lda     speed
         jsr     stars_tick
         jsr     enemies_tick
+        jsr     centi_tick
+        jsr     duels_tick
         jsr     bolts_tick
         jsr     bursts_tick
         lda     laser_t
@@ -566,8 +585,11 @@ destroy_enemy:
         jsr     burst_add
         ldx     hit_best
         ldy     en_kind,x
+        lda     by_other                ; destroyed by another enemy: no score
+        bne     :+
         lda     kind_score,y            ; score += kind_score * 10
         jsr     add_score_x10
+:
         inc     kills
         inc     kills_total
         lda     #1
@@ -683,17 +705,11 @@ spawn_enemy:
         jsr     free_slot
         bcs     @no
         stx     g_tmp+1
-        ldy     faction
-        lda     faction_pool_lo,y
-        sta     ptr2
-        lda     faction_pool_hi,y
-        sta     ptr2+1
-        jsr     rand
-        and     #7
-        tay
-        lda     (ptr2),y
+        jsr     pick_spawn_kind
         ldx     g_tmp+1
         jsr     setup_kind
+        lda     spawn_side
+        sta     en_side,x
         jsr     rand                    ; x: -640..635
         jsr     times5
         sta     obj_x_lo,x
@@ -734,6 +750,10 @@ spawn_enemy:
 :       sta     en_dx,x
         lda     #0
         sta     en_dy,x
+        lda     en_kind,x
+        cmp     #K_CENTI
+        bne     @no
+        jmp     centi_spawn
 @no:    rts
 
 ; times5: A = signed byte -> A/Y = A * 5 (signed 16 bit, low/high). Keeps X.
@@ -778,6 +798,10 @@ enemies_tick:
 
 @move:  ldx     #ENEMY_SLOTS-1
 @slot:  lda     obj_active,x
+        bne     :+
+        jmp     @next
+:       lda     en_kind,x               ; body segments follow the head (centi_tick)
+        cmp     #K_SEG
         bne     :+
         jmp     @next
 :       lda     en_dx,x                 ; x += dx
@@ -1756,7 +1780,13 @@ txt_over:       scr "GAME  OVER"
 TEST_AIM_OFF = 0
 .endif
 test_autoplay:
-  .ifdef TEST_BOSS
+  .ifdef TEST_EVENTS
+        lda     #99                     ; (never out of shields)
+        sta     shield
+        lda     events                  ; both a duel and a centipede seen
+        cmp     #3
+        bne     :+
+  .elseif .defined(TEST_BOSS)
         lda     boss_dying              ; the boss test passes when the hull blows
         beq     :+
   .else

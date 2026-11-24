@@ -40,6 +40,8 @@ assemble build/test/play-control.prg -D TEST_PLAY=1 -D TEST_AIM_OFF=60
 assemble build/test/disk-save.prg -D TEST_DISK=1
 assemble build/test/disk-load.prg -D TEST_DISK=2
 assemble build/test/table.prg -D TEST_DISK=3
+assemble build/test/events.prg -D TEST_PLAY=1 -D TEST_EVENTS=1 -D TEST_AIM_OFF=60
+assemble build/test/events-control.prg -D TEST_PLAY=1 -D TEST_EVENTS=1 -D TEST_AIM_OFF=60 -D NO_RIVALS=1
 assemble build/test/boss.prg -D TEST_PLAY=1 -D TEST_BOSS=1
 assemble build/test/boss-control.prg -D TEST_PLAY=1 -D TEST_BOSS=1 -D TEST_AIM_OFF=60
 for scene in 1 2 3 5; do

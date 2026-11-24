@@ -15,7 +15,8 @@ fail=0
 for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.prg \
          build/test/mul.prg build/test/mul-control.prg build/test/play.prg build/test/play-control.prg \
          build/test/boss.prg build/test/boss-control.prg build/test/table.prg \
-         build/test/disk-save.prg build/test/disk-load.prg build/galactic-anarchy.d64; do
+         build/test/disk-save.prg build/test/disk-load.prg build/galactic-anarchy.d64 \
+         build/test/events.prg build/test/events-control.prg; do
   [ -f "$root/$f" ] || { echo "preflight: $f missing (run ./build.sh)"; fail=1; }
 done
 [ "$fail" = 0 ] || exit 2
@@ -135,6 +136,10 @@ check disk-load-fresh 1 --disk "$root/build/galactic-anarchy.d64" --cycles 80000
 check play 0 --cycles 150000000 --debugcart --autostart "$root/build/test/play.prg"
 # Control: the same, aiming 60 pixels to the side, must not get there.
 check play-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/play-control.prg"
+# Anarchy: in a dangerous Swarm sector rivals arrive and duel the owners, and a centipede
+# comes; the control without rivals never sees a duel (no result).
+check events 0 --cycles 150000000 --debugcart --autostart "$root/build/test/events.prg"
+check events-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/events-control.prg"
 # The Dreadnought: aiming at its weak points destroys it; the control aiming off cannot
 # (the shields run out first: 2, or the time: 124).
 check boss 0 --cycles 150000000 --debugcart --autostart "$root/build/test/boss.prg"
