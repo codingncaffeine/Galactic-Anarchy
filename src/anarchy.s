@@ -14,7 +14,18 @@ RIVAL_CHANCE    = 0                     ; (a test control: no rivals)
 RIVAL_CHANCE    = 64                    ; of 256 arrivals in a faction's sector
 .endif
 
+HEAT_KILL       = 3                     ; heat a kill adds to the ship's faction
+HEAT_RIVAL      = 1                     ; and takes from each of the other two
+HEAT_COOL       = 5                     ; every faction cools this much a sector
+HEAT_MAX        = 99                    ; heat is 0-99; its level (0-9) is heat / 10
+
         .segment "BSS"
+heat:           .res 3                  ; per faction (F_CONCORD, F_CORSAIR, F_SWARM)
+heat_lv:        .res 1
+heat_rival:     .res 1
+heat_lx:        .res 1
+heat_second:    .res 1
+heat_end:       .res 1
 en_side:        .res ENEMY_SLOTS        ; 0 = the sector's owners, 1 = a rival faction
 spawn_side:     .res 1
 duel_t:         .res 1                  ; ticks the duel line shows
@@ -37,6 +48,232 @@ events:         .res 1                  ; for tests: bit 0 a duel, bit 1 a centi
 
         .segment "CODE"
 
+; ---------------------------------------------------------------------------------------
+; Heat: how much each faction wants the player dead. A kill heats the ship's faction and
+; cools its two rivals; every sector cools all three a little. A hot faction sends more
+; ships at once and sooner in its own sectors (heat_sector), more rivals into the
+; others' (pick_spawn_kind), and takes over more of the map ahead (rand_faction_heat).
+
+heat_reset:
+        lda     #0
+        sta     heat
+        sta     heat+1
+        sta     heat+2
+        rts
+
+; heat_kill: the player destroyed an enemy of kind Y (in a sector of `faction`).
+heat_kill:
+.ifdef NO_HEAT
+        rts                             ; (a test control: heat changes nothing)
+.endif
+        lda     kind_faction,y
+        cmp     #F_OWNER
+        bne     :+
+        lda     faction                 ; a freighter: the convoy's faction
+:       cmp     #3
+        bcs     @done
+        tax
+        lda     heat,x
+        clc
+        adc     #HEAT_KILL
+        cmp     #HEAT_MAX+1
+        bcc     :+
+        lda     #HEAT_MAX
+:       sta     heat,x
+        ldy     #2                      ; the other two cool
+@cool:  sty     an_tmp
+        cpx     an_tmp
+        beq     @same
+        lda     heat,y
+        sec
+        sbc     #HEAT_RIVAL
+        bcs     :+
+        lda     #0
+:       sta     heat,y
+@same:  dey
+        bpl     @cool
+        lda     #1
+        sta     panel_dirty
+@done:  rts
+
+; heat_cool: after a sector, every faction cools by HEAT_COOL.
+heat_cool:
+        ldx     #2
+:       lda     heat,x
+        sec
+        sbc     #HEAT_COOL
+        bcs     :+
+        lda     #0
+:       sta     heat,x
+        dex
+        bpl     :--
+        rts
+
+; heat_level: A = heat of faction X / 10 (0-9). Keeps X and Y.
+heat_level:
+        lda     heat,x
+        stx     heat_lx
+        ldx     #0
+:       cmp     #10
+        bcc     :+
+        sbc     #10
+        inx
+        bne     :-
+:       txa
+        ldx     heat_lx
+        rts
+
+; heat_sector: in a faction's own sector, its heat level adds level / 3 ships on screen at
+; once (up to ENEMY_SLOTS) and brings arrivals 2 ticks sooner per level (from 16 on).
+heat_sector:
+.ifdef NO_HEAT
+        rts
+.endif
+        ldx     faction
+        cpx     #3
+        bcs     @done
+        jsr     heat_level
+        sta     heat_lv
+        ldx     #0                      ; level / 3
+        sec
+:       sbc     #3
+        bcc     :+
+        inx
+        bcs     :-
+:       txa
+        clc
+        adc     active_max
+        cmp     #ENEMY_SLOTS+1
+        bcc     :+
+        lda     #ENEMY_SLOTS
+:       sta     active_max
+        lda     heat_lv
+        asl
+        sta     an_tmp
+        lda     spawn_delay
+        sec
+        sbc     an_tmp
+        bcc     :+
+        cmp     #16
+        bcs     :++
+:       lda     #16
+:       sta     spawn_delay
+@done:  rts
+
+; hotter_rival: of the two factions other than `faction`, heat_rival = the first and
+; heat_second the second (faction + 1 and + 2, mod 3), heat_lv = the hotter one's level.
+hotter_rival:
+        ldx     faction
+        inx
+        cpx     #3
+        bcc     :+
+        ldx     #0
+:       stx     heat_rival
+        inx
+        cpx     #3
+        bcc     :+
+        ldx     #0
+:       stx     heat_second
+        lda     heat,x
+        ldy     heat_rival
+        cmp     heat,y
+        bcs     :+                      ; the second is at least as hot
+        ldx     heat_rival
+:       jsr     heat_level
+        sta     heat_lv
+        rts
+
+; pick_rival: heat_rival = the hotter of the two (one of them at random when level).
+; With no heat this draws one random number, as the rival pick always has.
+pick_rival:
+        jsr     hotter_rival
+        ldx     heat_second
+        lda     heat,x
+        ldy     heat_rival
+        cmp     heat,y
+        beq     @even
+        bcc     @done
+        stx     heat_rival              ; the second is hotter
+@done:  rts
+@even:  jsr     rand
+        and     #1
+        beq     @done
+        stx     heat_rival
+        rts
+
+; rand_faction_heat: A = a faction for a sector that changes hands, each with weight
+; 1 + its heat level. Keeps X.
+rand_faction_heat:
+        stx     an_tmp+1
+        lda     #3                      ; the total weight
+        sta     an_tmp
+        ldx     #2
+:       jsr     heat_level
+        clc
+        adc     an_tmp
+        sta     an_tmp
+        dex
+        bpl     :-
+:       jsr     rand                    ; r in 0 .. total - 1 (total is at most 30)
+        and     #31
+        cmp     an_tmp
+        bcs     :-
+        ldx     #0
+@walk:  sta     an_tmp
+        jsr     heat_level
+        sec                             ; r -= 1 + level
+        adc     #0
+        sta     heat_lv
+        lda     an_tmp
+        sec
+        sbc     heat_lv
+        bcc     @this
+        inx
+        cpx     #2
+        bcc     @walk
+@this:  txa
+        ldx     an_tmp+1
+        rts
+
+; heat_show: the heat levels on the panel's bottom row, each faction in its colour.
+heat_show:
+        print_at PANEL_ROW+4, 1, txt_heat
+        ldx     #2
+@f:     ldy     heat_col,x              ; the digit
+        jsr     heat_level
+        ora     #'0'
+        sta     an_tmp
+        txa
+        pha
+        set_pos PANEL_ROW+4, 0
+        lda     an_tmp
+        jsr     put_char
+        pla
+        tax
+        ldy     heat_col,x              ; the faction's name and level in its colour
+        iny
+        sty     heat_end
+        ldy     heat_from,x
+        lda     faction_color,x
+        lsr
+        lsr
+        lsr
+        lsr
+:       sta     COLOR_RAM+(PANEL_ROW+4)*40,y
+        iny
+        cpy     heat_end
+        bcc     :-
+        dex
+        bpl     @f
+        rts
+
+        .segment "RODATA"
+txt_heat:       scr "HEAT  CONCORD -  CORSAIR -  SWARM -"
+                .byte 0
+heat_from:      .byte 7, 18, 29         ; panel columns of the names
+heat_col:       .byte 15, 26, 35        ; of the digits
+        .segment "CODE"
+
 ; anarchy_reset: at the start of a sector.
 anarchy_reset:
         lda     #$FF
@@ -48,7 +285,9 @@ anarchy_reset:
         sta     duel_wait
         rts
 
-; pick_spawn_kind: A = the kind of the next arrival, spawn_side = its side.
+; pick_spawn_kind: A = the kind of the next arrival, spawn_side = its side. Rivals come
+; from the hotter of the two other factions (either, when they are level), and the
+; hotter it is the more of them: RIVAL_CHANCE + 12 per heat level in 256.
 pick_spawn_kind:
         lda     #0
         sta     spawn_side
@@ -57,18 +296,19 @@ pick_spawn_kind:
         bcs     @pool
         lda     danger                  ; and not in the very first sectors
         beq     @pool
+        jsr     hotter_rival            ; heat_lv: how hot the hotter rival is
+        lda     heat_lv
+        asl
+        adc     heat_lv
+        asl
+        asl                             ; 12 per level (up to 108)
+        adc     #RIVAL_CHANCE
+        sta     an_tmp
         jsr     rand
-        cmp     #RIVAL_CHANCE
+        cmp     an_tmp
         bcs     @pool
-        jsr     rand                    ; one of the other two factions
-        and     #1
-        clc
-        adc     #1
-        adc     faction
-        cmp     #3
-        bcc     :+
-        sbc     #3
-:       tay
+        jsr     pick_rival              ; which of the two comes
+        ldy     heat_rival
         lda     #1
         sta     spawn_side
 @pool:  lda     faction_pool_lo,y

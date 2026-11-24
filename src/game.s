@@ -73,6 +73,10 @@ kind_model:     .byte MODEL_LANCER, MODEL_RAIDER, MODEL_GUNSHIP, MODEL_MAULER
                 .byte MODEL_POD, MODEL_DREAD_MID, MODEL_CENTI_HEAD, MODEL_CENTI_SEG
                 .byte MODEL_GATE, MODEL_FREIGHTER
 kind_hp:        .byte 1, 1, 3, 2,  1, 1, 1, 2,  4, 1, 2, 1, 1,  POD_HP, 255, 2, 1,  255, 4
+; The faction a kind flies for (heat), $FF none, F_OWNER the sector's.
+kind_faction:   .byte F_CONCORD, F_CORSAIR, F_CONCORD, F_CORSAIR
+                .byte F_SWARM, F_SWARM, F_SWARM, F_SWARM, F_SWARM
+                .byte $FF, $FF, $FF, $FF,  $FF, $FF, F_SWARM, F_SWARM,  $FF, F_OWNER
 kind_score:     .byte 10, 15, 30, 25,  12, 15, 10, 20,  50, 5, 5, 3, 2,  30, 0, 40, 5,  0, 80
 kind_flags:     .byte KF_FIRES, KF_FIRES, KF_FIRES, KF_FIRES
                 .byte KF_FIRES, KF_FIRES, 0, KF_FIRES
@@ -207,6 +211,20 @@ game_main:
         lda     #2
         sta     danger
         lda     #0
+        sta     map_col
+        lda     #99
+        sta     shield
+        jsr     ready_start
+  .elseif .defined(TEST_HEAT)
+        jsr     game_new                ; a quiet Concord sector at once, the Concord
+        lda     #60                     ; already at heat level 6
+        sta     heat+F_CONCORD
+        lda     #MIS_FIGHT
+        sta     mission
+        lda     #F_CONCORD
+        sta     faction
+        lda     #0
+        sta     danger
         sta     map_col
         lda     #99
         sta     shield
@@ -497,6 +515,7 @@ ready_start:
         sec
         adc     #64
         sta     spawn_delay
+        jsr     heat_sector             ; a hot faction's own sector: more, sooner
         lda     #TRACK_FIGHT
         ldx     boss_fight
         beq     :+
@@ -782,6 +801,9 @@ destroy_enemy:
         bne     :+
         lda     kind_score,y            ; score += kind_score * 10
         jsr     add_score_x10
+        ldx     hit_best                ; and the ship's faction is hotter
+        ldy     en_kind,x
+        jsr     heat_kill
 :
         inc     kills
         lda     by_other                ; the player's own kills, for the tests
@@ -1928,6 +1950,11 @@ panel_clear:
         print_at PANEL_ROW+2, 1, txt_blank
         print_at PANEL_ROW+3, 1, txt_blank
         print_at PANEL_ROW+4, 1, txt_blank
+        ldx     #39                     ; the bottom row cyan again (heat colours it)
+        lda     #COLOR_CYAN
+:       sta     COLOR_RAM+(PANEL_ROW+4)*40,x
+        dex
+        bpl     :-
         rts
 
 panel_refresh:
@@ -1960,6 +1987,9 @@ panel_refresh:
         set_pos PANEL_ROW+3, 13
         lda     quota
         jsr     print_2digits
+        lda     demo                    ; heat (the demo's row says how to play)
+        bne     @done
+        jmp     heat_show
 @done:  rts
 
 ; print_score: the 24-bit number at zero page X as 6 digits.
@@ -2012,6 +2042,7 @@ game_reset:
         sta     cross_vis
         lda     #SHIELD_FULL
         sta     shield
+        jsr     heat_reset
         jsr     panel_clear
         print_at PANEL_ROW+1, 1, txt_score
         print_at PANEL_ROW+3, 1, txt_kills

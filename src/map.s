@@ -15,6 +15,7 @@ F_SWARM         = 2
 F_FIELD         = 3                     ; asteroid field, nobody's
 F_BOSS          = 4                     ; the Dreadnought
 F_RING          = 5                     ; a derelict station: the Ring Run
+F_OWNER         = $FE                   ; kind_faction: the sector's faction (freighters)
 
         .segment "RODATA"
 ; Node centres in viewport pixels, by column and by row.
@@ -368,9 +369,10 @@ map_tick:
         jmp     boss_start
 :       jmp     ready_start
 
-; map_after_sector: shields repaired a little, two sectors ahead change hands, back to
-; the map (or round again after the last column).
+; map_after_sector: shields repaired a little, the factions cool, two sectors ahead
+; change hands, back to the map (or round again after the last column).
 map_after_sector:
+        jsr     heat_cool
         lda     demo                    ; the demo flies on in a fresh sector
         beq     :+
         jsr     rand_faction
@@ -409,7 +411,7 @@ map_after_sector:
         lda     node_faction,x          ; a faction's sector or a field, not a boss
         cmp     #F_BOSS
         bcs     @shift
-        jsr     rand_faction
+        jsr     rand_faction_heat       ; hot factions take more of it
         sta     node_faction,x
         dec     map_tmp+2
         bne     @shift

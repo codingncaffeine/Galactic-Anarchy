@@ -18,7 +18,8 @@ for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.pr
          build/test/disk-save.prg build/test/disk-load.prg build/galactic-anarchy.d64 \
          build/test/events.prg build/test/events-control.prg build/test/ring.prg \
          build/test/ring-control.prg build/test/convoy.prg build/test/convoy-control.prg \
-         build/test/bench-6.prg build/test/clip-control.prg build/test/hidden-control.prg; do
+         build/test/bench-6.prg build/test/clip-control.prg build/test/hidden-control.prg \
+         build/test/heat.prg build/test/heat-control.prg; do
   [ -f "$root/$f" ] || { echo "preflight: $f missing (run ./build.sh)"; fail=1; }
 done
 [ "$fail" = 0 ] || exit 2
@@ -37,6 +38,10 @@ check_not() {  # check_not NAME UNWANTED_STATUS ARGS...: any exit but UNWANTED p
   else
     echo "FAIL  $name: exit $got (log: build/test-out/$name.log)"; failed=$((failed + 1))
   fi
+}
+verdict() {  # verdict NAME CONDITION DETAIL
+  if eval "$2"; then echo "ok    $1"; passed=$((passed + 1))
+  else echo "FAIL  $1: $3"; failed=$((failed + 1)); fi
 }
 check() {  # check NAME EXPECTED_STATUS ARGS...
   local name="$1" want="$2"; shift 2
@@ -155,6 +160,30 @@ check play-control 124 --cycles 40000000 --debugcart --autostart "$root/build/te
 # comes; the control without rivals never sees a duel (no result).
 check events 0 --cycles 150000000 --debugcart --autostart "$root/build/test/events.prg"
 check events-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/events-control.prg"
+# Heat: a Concord sector with the Concord at heat 60 (level 6) has 2 more ships on screen
+# at once (4) and arrivals 12 ticks sooner (52); five kills there heat the Concord further
+# (at least two of its ships among them: 66) and nobody else. The control build, where
+# heat does nothing, shows 2, 64 and 60.
+heat_of() {  # heat_of NAME: heat (three bytes), active_max and spawn_delay, decimal
+  local a b c
+  a=$(sed -n 's/^al 00\([0-9A-F]*\) \.heat$/\1/p' "$root/build/test/$1.labels")
+  b=$(sed -n 's/^al 00\([0-9A-F]*\) \.active_max$/\1/p' "$root/build/test/$1.labels")
+  c=$(sed -n 's/^al 00\([0-9A-F]*\) \.spawn_delay$/\1/p' "$root/build/test/$1.labels")
+  run --cycles 40000000 --debugcart --autostart "$root/build/test/$1.prg" --dump "$a:3" \
+    --dump "$b:1" --dump "$c:1" >"$out/$1.log" 2>&1 || { echo "x x x x x"; return; }
+  local v
+  v=$(grep -i -e "^$a:" -e "^$b:" -e "^$c:" "$out/$1.log" | cut -d' ' -f2- | tr '\n' ' ')
+  set -- $v
+  [ $# = 5 ] || { echo "x x x x x"; return; }
+  echo $((16#$1)) $((16#$2)) $((16#$3)) $((16#$4)) $((16#$5))
+}
+read -r h0 h1 h2 hm hd < <(heat_of heat)
+verdict heat '[[ "$h0" =~ ^[0-9]+$ ]] && [ "$h0" -ge 66 ] && [ "$h1" = 0 ] && [ "$h2" = 0 ] &&
+  [ "$hm" = 4 ] && [ "$hd" = 52 ]' "heat $h0 $h1 $h2, on screen $hm, arrivals every $hd"
+read -r c0 c1 c2 cm cd < <(heat_of heat-control)
+verdict heat-control '[ "$c0" = 60 ] && [ "$cm" = 2 ] && [ "$cd" = 64 ]' \
+  "heat $c0 $c1 $c2, on screen $cm, arrivals every $cd"
+
 # The Ring Run: keeping the crosshair on the rings threads three; held in a corner, none.
 check ring 0 --cycles 150000000 --debugcart --autostart "$root/build/test/ring.prg"
 check ring-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/ring-control.prg"
@@ -176,10 +205,6 @@ scene_stats() {  # scene_stats NAME PRG
 read -r cl cr ct clit < <(scene_stats clip "$root/build/test/bench-6.prg")
 read -r nl nr nt nlit < <(scene_stats clip-control "$root/build/test/clip-control.prg")
 read -r hl hr ht hlit < <(scene_stats hidden-control "$root/build/test/hidden-control.prg")
-verdict() {  # verdict NAME CONDITION DETAIL
-  if eval "$2"; then echo "ok    $1"; passed=$((passed + 1))
-  else echo "FAIL  $1: $3"; failed=$((failed + 1)); fi
-}
 # Clipped edges reach the viewport's left and right sides; without clipping
 # (the control) they stop short of the left side, where the big ship crosses.
 num() { [[ "$1" =~ ^[0-9]+$ ]]; }
