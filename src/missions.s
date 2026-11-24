@@ -78,9 +78,11 @@ mission_spawn:
         lda     mission
         cmp     #MIS_RING
         beq     ring_spawn
-        cmp     #MIS_RING+1             ; a convoy, raided or escorted
-        bcc     @no
-        jsr     rand                    ; a convoy: a third of the arrivals are freighters
+        cmp     #MIS_CONVOY             ; a convoy, raided or escorted
+        beq     :+
+        cmp     #MIS_ESCORT
+        bne     @no
+:       jsr     rand                    ; a convoy: a third of the arrivals are freighters
         cmp     #85
         bcc     convoy_spawn
 @no:    sec
