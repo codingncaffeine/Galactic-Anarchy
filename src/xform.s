@@ -28,6 +28,7 @@ vmod_x:         .res 2                  ; current model's vertex arrays
 vmod_y:         .res 2
 vmod_z:         .res 2
 vmod_count:     .res 1
+anim_tick:      .res 1
 bb_minx:        .res 1                  ; screen bounding box of the object's vertices
 bb_maxx:        .res 1
 bb_miny:        .res 1
@@ -53,21 +54,6 @@ scr_y:          .res MAX_VERTS
 scr_ok:         .res MAX_VERTS          ; 0 = on screen, else not drawable
 edge_a:         .res MAX_EDGES
 edge_b:         .res MAX_EDGES
-
-        .segment "RODATA"
-; Per model number: vertex and edge arrays and counts.
-model_vcount:   .byte MODEL_CUBE_VERTS, MODEL_ICO_VERTS
-model_ecount:   .byte MODEL_CUBE_EDGES, MODEL_ICO_EDGES
-model_x_lo:     .byte <model_cube_x, <model_ico_x
-model_x_hi:     .byte >model_cube_x, >model_ico_x
-model_y_lo:     .byte <model_cube_y, <model_ico_y
-model_y_hi:     .byte >model_cube_y, >model_ico_y
-model_z_lo:     .byte <model_cube_z, <model_ico_z
-model_z_hi:     .byte >model_cube_z, >model_ico_z
-model_ea_lo:    .byte <model_cube_ea, <model_ico_ea
-model_ea_hi:    .byte >model_cube_ea, >model_ico_ea
-model_eb_lo:    .byte <model_cube_eb, <model_ico_eb
-model_eb_hi:    .byte >model_cube_eb, >model_ico_eb
 
         .segment "CODE"
 
@@ -126,9 +112,22 @@ build_edges:
         jmp     @obj
 @done:  rts
 
-; spin_objects: advances every object's angles by its turn rates.
+; spin_objects: advances every object's angles by its turn rates, and every fourth drawn
+; frame moves animated models on to their next frame (model_next).
 spin_objects:
+        inc     anim_tick
+        lda     anim_tick
+        and     #3
+        bne     :++
         ldx     obj_count
+        dex
+        bmi     :++
+:       ldy     obj_model,x
+        lda     model_next,y
+        sta     obj_model,x
+        dex
+        bpl     :-
+:       ldx     obj_count
         dex
         bmi     @done
 :       lda     obj_yaw,x

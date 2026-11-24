@@ -14,9 +14,14 @@ kill quota, and the best scores are saved to disk.
 
 ## Status
 
-Early development. The current build is the engine benchmark shown above: wireframe test
-models spin in the double-buffered hires viewport, and the panel below shows the frame
-rate and how many cycles each stage of a frame takes. There is no game to play yet.
+Early development. The current build is the engine benchmark: it opens on the enemy
+roster, turning each enemy in the double-buffered hires viewport with its name on the
+panel and moving on to the next by itself. The panel also shows the frame rate and how
+many cycles each stage of a frame takes. There is no game to play yet.
+
+The enemies so far: the Concord Lancer and Gunship, the Corsair Raider and Mauler, the
+insect machines of the Swarm (Skitter, Hornet, Moth, Mantis, Centipede and their Hive),
+crystal mines and asteroids. They are made in `models/`, in a plain text format.
 
 The game is free and open source and will stay that way.
 

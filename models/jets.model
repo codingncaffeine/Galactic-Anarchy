@@ -1,0 +1,66 @@
+# Jets of the Concord Remnant (the old navy) and the Corsairs (pirates).
+# Axes: x right, y up, z forward (the nose points along +z). Format: tools/GaTool/Models.cs.
+
+model lancer
+title concord lancer
+roster
+# Navy interceptor: a clean delta with a tall fin and a raised canopy.
+v nose    0   0  80
+m tip    60  -4 -45
+m root   16   0 -32
+v tail    0   0 -40
+v fin     0  34 -50
+v canopy  0  10  18
+me nose tip root tail
+e nose canopy fin tail
+me canopy root
+
+model gunship
+title concord gunship
+roster
+# Navy gunship: a boxy hull tapering to the front, with a gun pod on each side.
+m fu    12  10  60
+m fd    12 -10  60
+m bu    22  14 -50
+m bd    22 -14 -50
+m podf  46   0  40
+m podb  46   0 -40
+loop fu.l fu.r fd.r fd.l
+loop bu.l bu.r bd.r bd.l
+me fu bu
+me fd bd
+me podf podb
+me podf fd
+me podb bd
+
+model raider
+title corsair raider
+roster
+# Pirate fighter: forward-swept wings, an underslung engine pair, a spine on top.
+v nose    0   0  70
+m cheek  12   0  30
+m tip    66   0  36
+m wroot  16   0 -30
+v tail    0   0 -48
+m engine 12 -14 -50
+v spine   0  14 -12
+me nose cheek tip wroot tail
+me wroot engine
+e engine.l engine.r
+e nose spine tail
+
+model mauler
+title corsair mauler
+roster
+# Pirate bomber: a wide flying wing with a hump and two drop pods.
+v nose    0   0  50
+m tip    90   0 -24
+m trail  34   0 -34
+v back    0   0 -22
+v hump    0  16   0
+m pod    30 -14  10
+me nose tip trail back
+e nose hump back
+me hump trail
+me pod trail
+me pod nose

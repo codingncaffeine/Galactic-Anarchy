@@ -1,0 +1,129 @@
+# The Swarm: mining machines that grew into insect shapes. Every one has antennae.
+# Axes: x right, y up, z forward (the head points along +z). Format: tools/GaTool/Models.cs.
+
+model skitter
+title swarm skitter
+roster
+# Beetle: a domed shell, six legs and long bent antennae.
+v head     0   4  44
+m shoulder 22   6  22
+m mid      26   4  -4
+m hip      22   6 -30
+v back     0   2 -46
+v dome     0  20  -6
+m leg1     44 -18  30
+m leg2     50 -18  -4
+m leg3     44 -18 -40
+m bend     10  18  62
+m ant      26  30  86
+me head shoulder mid hip back
+e head dome back
+me shoulder leg1
+me mid leg2
+me hip leg3
+me head bend ant
+
+model hornet
+title swarm hornet
+roster
+# Wasp: head, thorax and a hanging abdomen ending in a stinger, two wings raised in a V,
+# dangling legs.
+v hf       0   4  58
+m hs       9   6  48
+v neck     0   2  38
+m ts      13   6  22
+v waist    0   0   6
+m as      16 -10 -18
+v sting    0 -30 -54
+m wtip    54  38   0
+m wback   32  24 -24
+m leg     16 -30  16
+m ant     16  26  80
+me hf hs neck
+me neck ts waist
+me waist as sting
+me ts wtip wback waist
+me ts leg
+me hs ant
+e as.l as.r
+
+model moth
+title swarm moth
+roster
+# Moth: broad wings that beat (two frames) and feathered antennae.
+v head     0   0  34
+v tail     0   0 -40
+m wf      64   8  20
+m wb      58   6 -34
+m wvein   30   4  -6
+m ant     22  18  60
+m feather 30   8  52
+e head tail
+me head wf wb tail
+me head wvein wb
+me head ant feather
+frame
+m wf      48  44  20
+m wb      44  40 -34
+m wvein   22  24  -6
+
+model mantis
+title swarm mantis
+roster
+# Mantis: the upper body rises to a triangle head with long antennae; folded claws hang
+# forward from the thorax; the abdomen trails low.
+v head     0  30  46
+m eye     11  32  40
+v neck     0  16  28
+m th       8   6   8
+m hip      9   0 -12
+v tail     0  -6 -64
+m claw1   16  20  40
+m claw2   14   0  62
+m leg     36 -26 -14
+m ant     26  52  72
+me head eye neck
+e eye.l eye.r
+me neck th hip tail
+me th claw1 claw2
+me hip leg
+me eye ant
+
+model centi_head
+title swarm centipede
+roster
+# Centipede head: a diamond ring like the body's, a snout, side jaws and antennae.
+# The body follows as centi_seg models in a line.
+v top      0  12   0
+v bot      0  -8   0
+m side    14   0   0
+v nose     0   2  22
+m jaw     10  -6  32
+m ant     18  30  44
+loop top side.r bot side.l
+me side nose
+e top nose bot
+me side jaw
+me top ant
+
+model centi_seg
+title centipede body
+# One body segment: a diamond ring with a pair of legs.
+v top      0  12   0
+v bot      0 -10   0
+m side    16   0   0
+m leg     30 -16   0
+loop top side.r bot side.l
+me side leg
+
+model hive
+title swarm hive
+roster
+# The hive: a six-sided pod that releases the swarm through its open end.
+ring front 6 46 40
+ring back  6 52 -40
+v core     0   0 -60
+loop front*
+loop back*
+pairs front back
+e back0 core back3

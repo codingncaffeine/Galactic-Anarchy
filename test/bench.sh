@@ -15,16 +15,30 @@ out="$root/build/bench"
 rm -rf "$out"; mkdir -p "$out"
 rate=50; [ "$model" = ntsc ] && rate=60
 
-printf '%-6s %6s %6s %9s %9s %9s %9s\n' scene edges fps clear math lines total
+# Names of the roster builds' models, from the generated model table.
+models_inc="$root/build/gen/models.inc"
+roster_name() {
+  local idx
+  idx=$(sed -n 's/^roster_model: *\.byte //p' "$models_inc" | tr -d ' ' | cut -d, -f$(($1 + 1)))
+  sed -n "s/^MODEL_\([A-Z0-9_]*\) = $idx\$/\1/p" "$models_inc" | head -1 | tr 'A-Z' 'a-z'
+}
+
+printf '%-12s %6s %6s %9s %9s %9s %9s\n' scene edges fps clear math lines total
 status=0
-for scene in 1 2 3; do
-  prg="$root/build/test/bench-$scene.prg"
+runs=(bench-1 bench-2 bench-3 bench-5)
+for f in "$root"/build/test/roster-*.prg; do runs+=("$(basename "$f" .prg)"); done
+for name in "${runs[@]}"; do
+  prg="$root/build/test/$name.prg"
   [ -f "$prg" ] || { echo "bench: $prg missing (run ./build.sh)"; exit 2; }
-  log="$out/bench-$scene.log"
+  case "$name" in
+    bench-1) label="1 cube" ;; bench-2) label="2 icosa" ;; bench-3) label="8 cubes" ;;
+    bench-5) label="swarm" ;; roster-*) label=$(roster_name "${name#roster-}") ;;
+  esac
+  log="$out/$name.log"
   taskset -c 0-7 nice -n 10 "$k64run" "$roms" --model "$model" --cycles 200000000 --debugcart \
-    --autostart "$prg" --png "$out/bench-$scene.png" --dump 0340:10 >"$log" 2>&1
+    --autostart "$prg" --png "$out/$name.png" --dump 0340:10 >"$log" 2>&1
   rc=$?
-  if [ "$rc" != 0 ]; then echo "scene $scene: run failed (exit $rc, log $log)"; status=1; continue; fi
+  if [ "$rc" != 0 ]; then echo "$name: run failed (exit $rc, log $log)"; status=1; continue; fi
   # The dump line: "0340: b0 b1 ... b15"
   read -r -a b < <(grep '^0340:' "$log" | cut -d' ' -f2-)
   h() { echo $((16#${b[$1]})); }
@@ -33,7 +47,7 @@ for scene in 1 2 3; do
   s24() { echo $(( $(h $1) + 256 * $(h $(($1 + 1))) + 65536 * $(h $(($1 + 2))) )); }
   clear=$(( $(s24 4) / 32 )); math=$(( $(s24 7) / 32 )); lines=$(( $(s24 10) / 32 ))
   fps=$(awk -v f="$frames" -v r="$rate" 'BEGIN { printf "%.1f", 32 * r / f }')
-  printf '%-6s %6s %6s %9s %9s %9s %9s\n' "$scene" "$edges" "$fps" "$clear" "$math" "$lines" \
+  printf '%-12s %6s %6s %9s %9s %9s %9s\n' "$label" "$edges" "$fps" "$clear" "$math" "$lines" \
     $((clear + math + lines))
 done
 exit "$status"

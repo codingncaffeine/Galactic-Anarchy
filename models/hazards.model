@@ -1,0 +1,29 @@
+# Hazards: mines and asteroids. Format: tools/GaTool/Models.cs.
+
+model mine
+title crystal mine
+roster
+# A spiked double pyramid that splits into shards when hit.
+v top      0  56   0
+v bot      0 -56   0
+m east    36   0   0
+v north    0   0  36
+v south    0   0 -36
+loop east.l north east.r south
+e top east.l bot east.r top
+e top north bot south top
+
+model rock_l
+title large asteroid
+roster
+asteroid large 100 7
+
+model rock_m
+title asteroid
+roster
+asteroid medium 64 21
+
+model rock_s
+title rock fragment
+roster
+asteroid small 40 5

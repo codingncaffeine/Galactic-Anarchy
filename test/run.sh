@@ -49,6 +49,29 @@ check_panel() {
   fi
 }
 
+# check_roster NAME MOVED: the play build opens on the enemy roster and moves on by
+# itself. roster_item (address from the linker's label file) must be past 0 when MOVED
+# is 1, and still 0 when it is 0.
+check_roster() {
+  local name="$1" moved="$2"; shift 2
+  local addr
+  addr=$(sed -n 's/^al 00\([0-9A-F]*\) \.roster_item$/\1/p' "$root/build/galactic-anarchy.labels")
+  run "$@" --dump "$addr:1" >"$out/$name.log" 2>&1
+  local got=$?
+  local item
+  item=$(grep -i "^$addr:" "$out/$name.log" | cut -d' ' -f2)
+  local is_moved=0
+  [ -n "$item" ] && [ "$((16#$item))" -gt 0 ] && is_moved=1
+  if [ "$got" = 0 ] && [ -n "$item" ] && [ "$is_moved" = "$moved" ]; then
+    echo "ok    $name"; passed=$((passed + 1))
+  else
+    echo "FAIL  $name: exit $got, roster item '$item' (log: build/test-out/$name.log)"; failed=$((failed + 1))
+  fi
+}
+check_roster roster-advances 1 --frames 1200 --autostart "$root/build/galactic-anarchy.prg"
+# Control: before the first enemy's time is up (about 75 drawn frames of 96) it has not.
+check_roster roster-not-yet 0 --frames 300 --autostart "$root/build/galactic-anarchy.prg"
+
 # The fast multiply equals shift-and-add for all 65,536 pairs; the control has one table
 # entry corrupted and must fail (1).
 check mul 0 --cycles 40000000 --debugcart --autostart "$root/build/test/mul.prg"

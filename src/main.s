@@ -55,6 +55,8 @@ sum_draw:       .res 3
 div_n:          .res 2
 div_d:          .res 2
 div_r:          .res 2
+roster_item:    .res 1
+roster_timer:   .res 1
 
         .segment "CODE"
 start:
@@ -123,9 +125,13 @@ start:
 .endif
 
 .ifdef BENCH
+  .ifdef ROSTER_ITEM
+        lda     #ROSTER_ITEM
+        sta     roster_item
+  .endif
         lda     #BENCH
 .else
-        lda     #1
+        lda     #SCENE_ROSTER           ; the play build opens on the enemy roster
 .endif
         jsr     start_scene
 
@@ -172,6 +178,7 @@ frame_loop:
         jsr     end_window
 @no_window:
 .ifndef BENCH
+        jsr     roster_tick
         lda     CIA1_PRA                ; fire, newly pressed: next scene
         and     #JOY_FIRE
         eor     #JOY_FIRE               ; 1 = pressed
@@ -556,7 +563,11 @@ clear_pages:
 ; start_scene: A = scene number (1-SCENE_COUNT). Loads its objects and the panel.
 start_scene:
         sta     scene
-        tax
+        cmp     #SCENE_ROSTER
+        bne     :+
+        jsr     roster_setup
+        jmp     @loaded
+:       tax
         lda     scene_lo-1,x
         sta     str_ptr
         lda     scene_hi-1,x
@@ -611,7 +622,12 @@ start_scene:
         jmp     @obj
 @loaded:
         jsr     build_edges
-        lda     #0
+        print_at PANEL_ROW+2, 1, txt_blank
+        lda     scene
+        cmp     #SCENE_ROSTER
+        bne     :+
+        jsr     roster_title
+:       lda     #0
         sta     drawn
         sta     windows
         lda     frame
@@ -640,6 +656,74 @@ start_scene:
         jsr     to_decimal
         lda     #3
         jmp     put_digits
+
+; ---------------------------------------------------------------------------------------
+; The roster: one enemy at a time at a distance where it fills the view, turning slowly,
+; with its name on the panel. The play build moves on to the next every ROSTER_FRAMES
+; drawn frames.
+ROSTER_FRAMES = 96
+
+roster_setup:
+        ldx     roster_item
+        ldy     roster_model,x
+        sty     obj_model
+        lda     #1
+        sta     obj_count
+        lda     #0
+        sta     obj_x_lo
+        sta     obj_x_hi
+        sta     obj_y_lo
+        sta     obj_y_hi
+        sta     obj_yaw
+        sta     obj_roll
+        sta     obj_dyaw
+        sta     obj_dpitch
+        sta     obj_droll
+        sta     roster_timer
+        lda     model_view_z_lo,y
+        sta     obj_z_lo
+        lda     model_view_z_hi,y
+        sta     obj_z_hi
+.ifdef BENCH
+        lda     #128+24                 ; test builds: coming at the camera, turned a
+        sta     obj_yaw                 ; little, seen slightly from above
+        lda     #40
+        sta     obj_pitch
+.else
+        lda     #20                     ; seen a little from above, turning
+        sta     obj_pitch
+        lda     #2
+        sta     obj_dyaw
+.endif
+        rts
+
+roster_title:
+        ldy     obj_model
+        lda     model_title_lo,y
+        sta     str_ptr
+        lda     model_title_hi,y
+        sta     str_ptr+1
+        set_pos PANEL_ROW+2, 1
+        jmp     print_str
+
+; roster_tick: in the roster scene, the next enemy after ROSTER_FRAMES drawn frames.
+roster_tick:
+        lda     scene
+        cmp     #SCENE_ROSTER
+        bne     @done
+        inc     roster_timer
+        lda     roster_timer
+        cmp     #ROSTER_FRAMES
+        bcc     @done
+        ldx     roster_item
+        inx
+        cpx     #ROSTER_COUNT
+        bcc     :+
+        ldx     #0
+:       stx     roster_item
+        lda     #SCENE_ROSTER
+        jmp     start_scene
+@done:  rts
 
 ; ---------------------------------------------------------------------------------------
 .ifdef TEST_MUL
@@ -694,9 +778,11 @@ txt_bottom:     scr "CLEAR        MATH        LINES"
                 .byte 0
 
 ; Scenes: object count, then per object: model, x, y, z (16 bit each), turn rates.
-SCENE_COUNT = 3
-scene_lo:       .byte <scene_1, <scene_2, <scene_3
-scene_hi:       .byte >scene_1, >scene_2, >scene_3
+; Scene 4 is the roster, built by roster_setup instead.
+SCENE_COUNT = 5
+SCENE_ROSTER = 4
+scene_lo:       .byte <scene_1, <scene_2, <scene_3, 0, <scene_5
+scene_hi:       .byte >scene_1, >scene_2, >scene_3, 0, >scene_5
 
 .macro  object model, px, py, pz, dyaw, dpitch, droll
         .byte   model
@@ -704,8 +790,6 @@ scene_hi:       .byte >scene_1, >scene_2, >scene_3
         .byte   dyaw, dpitch, droll
 .endmacro
 
-MODEL_CUBE = 0
-MODEL_ICO  = 1
 
 scene_1:        .byte 1                 ; one cube, 12 edges
                 object MODEL_CUBE, 0, 0, 450, 2, 1, 3
@@ -721,6 +805,16 @@ scene_3:        .byte 8                 ; eight cubes, 96 edges
                 object MODEL_CUBE, -160, 170, 900, 3, 1, 2
                 object MODEL_CUBE, 160, 170, 900, 2, 2, 2
                 object MODEL_CUBE, 480, 170, 900, 1, 1, 3
+scene_5:        .byte 6                 ; a mixed enemy group at fighting distance
+                object MODEL_LANCER, -260, 70, 650, 2, 0, 1
+                object MODEL_RAIDER, 230, -60, 560, 1, 1, 2
+                object MODEL_SKITTER, 30, 120, 800, 2, 1, 0
+                object MODEL_MOTH, -330, -130, 900, 1, 0, 1
+                object MODEL_ROCK_L, 400, 150, 1000, 1, 2, 1
+                object MODEL_ROCK_M, 60, -150, 700, 2, 1, 3
+
+txt_blank:      scr "                                      "
+                .byte 0
 
         .include "tables.inc"
 ; The multiply and reciprocal code patch the low byte of a table address or index a
