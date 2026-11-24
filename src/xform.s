@@ -35,6 +35,7 @@ bb_minx:        .res 1                  ; screen bounding box of the object's ve
 bb_maxx:        .res 1
 bb_miny:        .res 1
 bb_maxy:        .res 1
+xf_inside:      .res 1                  ; 1: the object is wholly inside the view
 
         .segment "BSS"
 obj_model:      .res MAX_OBJECTS
@@ -92,6 +93,7 @@ oc_t:           .res 2
 ; scr_ok values. A vertex that failed projection keeps VS_OFF and the outcode bits of
 ; the half-spaces it is in; every one of them holds no point of the viewport, so an
 ; edge with both ends in the same one is not drawn.
+HL_MIN_W        = 16                    ; hidden lines only for objects this wide or more
 VS_NEVER        = $80                   ; an empty slot, a dot or a culled object
 VS_OFF          = $40                   ; transformed but not on the viewport
 OC_NEAR         = $01                   ; z < NEAR_Z
@@ -430,7 +432,9 @@ transform_vertex:
         to_world wy, acc1, obj_y_lo, obj_y_hi
         to_world wz, acc2, obj_z_lo, obj_z_hi
 
-        ldx     vert_out                ; kept for clipping
+        ldx     vert_out                ; kept for clipping (unless it cannot be needed)
+        lda     xf_inside
+        bne     @proj
         lda     wx
         sta     vw_xl,x
         lda     wx+1
@@ -443,7 +447,7 @@ transform_vertex:
         sta     vw_zl,x
         lda     wz+1
         sta     vw_zh,x
-        jsr     project_point
+@proj:  jsr     project_point
         bcs     @out
         ldx     vert_out
         lda     px
@@ -453,8 +457,11 @@ transform_vertex:
         lda     #0
         sta     scr_ok,x
         jmp     widen_bbox
-@out:   jsr     outcode
-        ldx     vert_out
+@out:   lda     #VS_NEVER               ; (not kept: such an edge is dropped)
+        ldx     xf_inside
+        bne     :+
+        jsr     outcode
+:       ldx     vert_out
         sta     scr_ok,x
         rts
 
@@ -652,10 +659,75 @@ cull_object:
         adc     obj_y_hi,x
         bvs     @cull
         bmi     @cull
+        jsr     inside_view
         clc
         rts
 @cull:  sec
         rts
+
+; inside_view: xf_inside = 1 when the bounding sphere is wholly inside the view (by the
+; same planes and margins as cull_object), so no vertex can need clipping. Expects
+; cull_object's acc1 (z/2 + z/8 + 2r) and acc2 (2r); X = the object.
+inside_view:
+        lda     #0
+        sta     xf_inside
+        sec                             ; near: z - 2r - NEAR_Z >= 0
+        lda     obj_z_lo,x
+        sbc     acc2
+        sta     acc0
+        lda     obj_z_hi,x
+        sbc     acc2+1
+        sta     acc0+1                  ; acc0 = z - 2r
+        lda     acc0
+        sec
+        sbc     #NEAR_Z
+        lda     acc0+1
+        sbc     #0
+        bmi     @out
+        sec                             ; right: z - 2r - x >= 0
+        lda     acc0
+        sbc     obj_x_lo,x
+        lda     acc0+1
+        sbc     obj_x_hi,x
+        bvs     @out
+        bmi     @out
+        clc                             ; left: x + z - 2r >= 0, i.e. x + acc0 >= 0
+        lda     acc0
+        adc     obj_x_lo,x
+        lda     acc0+1
+        adc     obj_x_hi,x
+        bvs     @out
+        bmi     @out
+        sec                             ; acc1 = 5z/8 - 2r
+        lda     acc1
+        sbc     acc2
+        sta     acc1
+        lda     acc1+1
+        sbc     acc2+1
+        sta     acc1+1
+        sec
+        lda     acc1
+        sbc     acc2
+        sta     acc1
+        lda     acc1+1
+        sbc     acc2+1
+        sta     acc1+1
+        sec                             ; top: acc1 - y >= 0
+        lda     acc1
+        sbc     obj_y_lo,x
+        lda     acc1+1
+        sbc     obj_y_hi,x
+        bvs     @out
+        bmi     @out
+        clc                             ; bottom: acc1 + y >= 0
+        lda     acc1
+        adc     obj_y_lo,x
+        lda     acc1+1
+        adc     obj_y_hi,x
+        bvs     @out
+        bmi     @out
+        inc     xf_inside
+@out:   rts
 
 ; hidden_lines: for a solid model, marks which of the object's edges lie only on hull
 ; faces that turn away (edge_hide). A face is seen when its three corners, at half
@@ -683,7 +755,20 @@ hidden_lines:
         sec
         sbc     vmod_count
         sta     hl_base
-        lda     #1
+        lda     bb_maxx                 ; small on screen (or off it): every edge shown
+        sec
+        sbc     bb_minx
+        bcc     @all
+        cmp     #HL_MIN_W
+        bcs     @wide
+@all:   ldx     hl_e
+        lda     #0
+:       sta     edge_hide,x
+        inx
+        dec     hl_ec
+        bne     :-
+        rts
+@wide:  lda     #1
         ldx     #NO_FACE
         sta     face_vis,x
         lda     #0
