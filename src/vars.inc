@@ -75,4 +75,12 @@ laser_snd:      .res 1                  ; frames of the laser sweep left
 laser_freq:     .res 1                  ; its pitch, high byte
 v2_gate:        .res 1                  ; frames until voice 2's gate goes off
 v3_gate:        .res 1
+
+; from boss.s
+boss_x:         .res 2                  ; the ship's centre, world units
+boss_y:         .res 2
+boss_phase:     .res 1
+boss_dying:     .res 1                  ; ticks of explosions left, 0 = fighting
+boss_secs:      .res 1                  ; the jump countdown
+boss_sub:       .res 1
         .segment "CODE"

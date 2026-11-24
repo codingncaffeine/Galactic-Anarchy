@@ -287,6 +287,7 @@ map_tick:
 :       lda     #0
         sta     fire_new
         sta     cross_lock
+        sta     boss_fight
         jsr     sel_node                ; the jump
         lda     node_faction,x
         sta     faction

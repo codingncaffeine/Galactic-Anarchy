@@ -37,6 +37,8 @@ assemble build/test/mul.prg -D TEST_MUL=1
 assemble build/test/mul-control.prg -D TEST_MUL=1 -D BREAK_MUL=1
 assemble build/test/play.prg -D TEST_PLAY=1
 assemble build/test/play-control.prg -D TEST_PLAY=1 -D TEST_AIM_OFF=60
+assemble build/test/boss.prg -D TEST_PLAY=1 -D TEST_BOSS=1
+assemble build/test/boss-control.prg -D TEST_PLAY=1 -D TEST_BOSS=1 -D TEST_AIM_OFF=60
 for scene in 1 2 3 5; do
   assemble "build/test/bench-$scene.prg" -D BENCH=$scene
 done

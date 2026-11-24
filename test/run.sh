@@ -13,7 +13,8 @@ fail=0
 [ -x "$k64run" ] || { echo "preflight: k64run not found at $k64run (set K64RUN)"; fail=1; }
 [ -d "$roms" ] || { echo "preflight: ROM folder not found at $roms (set K64_ROMS)"; fail=1; }
 for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.prg \
-         build/test/mul.prg build/test/mul-control.prg build/test/play.prg build/test/play-control.prg; do
+         build/test/mul.prg build/test/mul-control.prg build/test/play.prg build/test/play-control.prg \
+         build/test/boss.prg build/test/boss-control.prg; do
   [ -f "$root/$f" ] || { echo "preflight: $f missing (run ./build.sh)"; fail=1; }
 done
 [ "$fail" = 0 ] || exit 2
@@ -23,6 +24,16 @@ rm -rf "$out"; mkdir -p "$out"
 run() { taskset -c 0-7 nice -n 10 "$k64run" "$roms" "$@"; }
 
 passed=0; failed=0
+check_not() {  # check_not NAME UNWANTED_STATUS ARGS...: any exit but UNWANTED passes
+  local name="$1" unwanted="$2"; shift 2
+  run "$@" >"$out/$name.log" 2>&1
+  local got=$?
+  if [ "$got" != "$unwanted" ]; then
+    echo "ok    $name"; passed=$((passed + 1))
+  else
+    echo "FAIL  $name: exit $got (log: build/test-out/$name.log)"; failed=$((failed + 1))
+  fi
+}
 check() {  # check NAME EXPECTED_STATUS ARGS...
   local name="$1" want="$2"; shift 2
   run "$@" >"$out/$name.log" 2>&1
@@ -86,6 +97,10 @@ fi
 check play 0 --cycles 150000000 --debugcart --autostart "$root/build/test/play.prg"
 # Control: the same, aiming 60 pixels to the side, must not get there.
 check play-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/play-control.prg"
+# The Dreadnought: aiming at its weak points destroys it; the control aiming off cannot
+# (the shields run out first: 2, or the time: 124).
+check boss 0 --cycles 150000000 --debugcart --autostart "$root/build/test/boss.prg"
+check_not boss-control 0 --cycles 150000000 --debugcart --autostart "$root/build/test/boss-control.prg"
 
 # The fast multiply equals shift-and-add for all 65,536 pairs; the control has one table
 # entry corrupted and must fail (1).

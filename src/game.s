@@ -22,10 +22,12 @@ STATE_READY     = 1
 STATE_PLAY      = 2
 STATE_OVER      = 3
 STATE_MAP       = 4
+STATE_BOSS      = 5
 
 ; Kinds of enemy: model, hit points, score / 10, flags, weave mask, how it turns.
 KF_FIRES        = $01                   ; flags
 KF_SPLITS       = $02                   ; breaks into the next kind (rocks)
+KF_ARMOR        = $04                   ; shots do it no harm (the Dreadnought's hull)
 TURN_BANK       = 0                     ; faces the player, banks as it weaves
 TURN_WOBBLE     = 1                     ; faces the player, sways
 TURN_TUMBLE     = 2                     ; tumbles
@@ -43,20 +45,25 @@ K_MINE    = 9
 K_ROCK_L  = 10
 K_ROCK_M  = 11
 K_ROCK_S  = 12
+K_POD     = 13
+K_HULL    = 14
 
         .segment "RODATA"
 kind_model:     .byte MODEL_LANCER, MODEL_RAIDER, MODEL_GUNSHIP, MODEL_MAULER
                 .byte MODEL_SKITTER, MODEL_HORNET, MODEL_MOTH, MODEL_MANTIS
                 .byte MODEL_HIVE, MODEL_MINE, MODEL_ROCK_L, MODEL_ROCK_M, MODEL_ROCK_S
-kind_hp:        .byte 1, 1, 3, 2,  1, 1, 1, 2,  4, 1, 2, 1, 1
-kind_score:     .byte 10, 15, 30, 25,  12, 15, 10, 20,  50, 5, 5, 3, 2
+                .byte MODEL_POD, MODEL_DREAD_MID
+kind_hp:        .byte 1, 1, 3, 2,  1, 1, 1, 2,  4, 1, 2, 1, 1,  POD_HP, 255
+kind_score:     .byte 10, 15, 30, 25,  12, 15, 10, 20,  50, 5, 5, 3, 2,  30, 0
 kind_flags:     .byte KF_FIRES, KF_FIRES, KF_FIRES, KF_FIRES
                 .byte KF_FIRES, KF_FIRES, 0, KF_FIRES
                 .byte 0, 0, KF_SPLITS, KF_SPLITS, 0
-kind_weave:     .byte 31, 15, 63, 63,  15, 7, 15, 31,  0, 0, 0, 0, 0
+                .byte KF_FIRES, KF_ARMOR
+kind_weave:     .byte 31, 15, 63, 63,  15, 7, 15, 31,  0, 0, 0, 0, 0,  0, 0
 kind_turn:      .byte TURN_BANK, TURN_BANK, TURN_BANK, TURN_BANK
                 .byte TURN_WOBBLE, TURN_WOBBLE, TURN_WOBBLE, TURN_WOBBLE
                 .byte TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE, TURN_TUMBLE
+                .byte TURN_TUMBLE, TURN_TUMBLE
 
 
         .segment "BSS"
@@ -122,7 +129,21 @@ game_main:
 .ifdef TEST_PLAY
         lda     #0
         sta     kills_total
+  .ifdef TEST_BOSS
+        jsr     game_new                ; straight into a Dreadnought fight
+        lda     #F_BOSS
+        sta     faction
+        lda     #3
+        sta     danger
+        lda     #0
+        sta     map_col
+        sta     map_row
+        jsr     boss_start
+        lda     #99                     ; this test is about winning the fight
+        sta     shield
+  .else
         jsr     game_new                ; the test plays at once
+  .endif
 .else
         jsr     title_start
 .endif
@@ -195,8 +216,8 @@ state_tick:
         jmp     (g_tmp)
 
         .segment "RODATA"
-state_lo:       .byte <title_tick, <ready_tick, <play_tick, <over_tick, <map_tick
-state_hi:       .byte >title_tick, >ready_tick, >play_tick, >over_tick, >map_tick
+state_lo:       .byte <title_tick, <ready_tick, <play_tick, <over_tick, <map_tick, <boss_tick
+state_hi:       .byte >title_tick, >ready_tick, >play_tick, >over_tick, >map_tick, >boss_tick
         .segment "CODE"
 
 ; rand: A = a pseudo-random byte (16-bit Galois LFSR). Keeps X and Y.
@@ -348,7 +369,10 @@ ready_tick:
         jsr     bursts_tick
         dec     state_timer
         bne     :+
-        lda     #STATE_PLAY
+        lda     boss_fight
+        beq     @play
+        jmp     boss_begin
+@play:  lda     #STATE_PLAY
         sta     state
         lda     #20
         sta     spawn_t
@@ -407,7 +431,8 @@ shoot_enemies:
         sta     hit_best
         sta     hit_z
         sta     hit_z+1
-        ldx     #ENEMY_SLOTS-1
+        ldx     obj_count
+        dex
 @slot:  lda     obj_active,x
         bne     :+
         jmp     @next
@@ -458,6 +483,10 @@ shoot_enemies:
         bpl     @slot
         ldx     hit_best
         bmi     @none
+        ldy     en_kind,x               ; armour: the shot glances off
+        lda     kind_flags,y
+        and     #KF_ARMOR
+        bne     @hurt
         dec     en_hp,x
         bne     @hurt
         jmp     destroy_enemy
@@ -1664,9 +1693,14 @@ txt_over:       scr "GAME  OVER"
 TEST_AIM_OFF = 0
 .endif
 test_autoplay:
+  .ifdef TEST_BOSS
+        lda     boss_dying              ; the boss test passes when the hull blows
+        beq     :+
+  .else
         lda     kills_total
         cmp     #5
         bcc     :+
+  .endif
         lda     #0
         sta     DEBUGCART_RESULT
 :       lda     shield
@@ -1677,6 +1711,10 @@ test_autoplay:
 @find:  lda     obj_active,x
         beq     @next
         lda     obj_dot,x
+        bne     @next
+        ldy     en_kind,x               ; never at armour
+        lda     kind_flags,y
+        and     #KF_ARMOR
         bne     @next
         lda     obj_bb_x0,x
         cmp     #$FF
@@ -1703,11 +1741,3 @@ test_autoplay:
         sta     fire_new
 :       rts
 .endif
-
-; boss_start: until the Dreadnought fight exists, a boss sector is a harder fight.
-boss_start:
-        inc     danger
-        inc     danger
-        lda     #F_CORSAIR
-        sta     faction
-        jmp     ready_start

@@ -842,6 +842,7 @@ txt_blank:      scr "                                      "
 
         .include "game.s"
         .include "map.s"
+        .include "boss.s"
         .include "sound.s"
         .include "tables.inc"
 ; The multiply and reciprocal code patch the low byte of a table address or index a

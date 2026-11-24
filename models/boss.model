@@ -1,0 +1,77 @@
+# The Dreadnought: three hull sections set side by side along x (bow at -x), each 240
+# units long and meeting the next at the same cross-section (y +-28, z +-30), and the
+# weak points on it. Format: tools/GaTool/Models.cs.
+
+model dread_bow
+title dreadnought
+# The bow: a point opening out through a narrower ring to the full section.
+v tip   -120   0   0
+v m1     -20  18  20
+v m2     -20  18 -20
+v m3     -20 -18 -20
+v m4     -20 -18  20
+v r1     120  28  30
+v r2     120  28 -30
+v r3     120 -28 -30
+v r4     120 -28  30
+e tip m1 r1
+e tip m2 r2
+e tip m3 r3
+e tip m4 r4
+loop m1 m2 m3 m4
+loop r1 r2 r3 r4
+
+model dread_mid
+title dreadnought
+# The middle: a box with the bridge tower on top.
+v a1    -120  28  30
+v a2    -120  28 -30
+v a3    -120 -28 -30
+v a4    -120 -28  30
+v b1     120  28  30
+v b2     120  28 -30
+v b3     120 -28 -30
+v b4     120 -28  30
+v t1     -30  70  14
+v t2     -30  70 -14
+v t3      30  70 -14
+v t4      30  70  14
+loop a1 a2 a3 a4
+loop b1 b2 b3 b4
+e a1 b1
+e a2 b2
+e a3 b3
+e a4 b4
+loop t1 t2 t3 t4
+e t1 a1
+e t4 b1
+
+model dread_stern
+title dreadnought
+# The stern: the section narrowing to the engine block.
+v a1    -120  28  30
+v a2    -120  28 -30
+v a3    -120 -28 -30
+v a4    -120 -28  30
+v e1     110  36  22
+v e2     110  36 -22
+v e3     110 -36 -22
+v e4     110 -36  22
+loop a1 a2 a3 a4
+loop e1 e2 e3 e4
+e a1 e1
+e a2 e2
+e a3 e3
+e a4 e4
+
+model pod
+title weak point
+# A turret or engine pod: a spiked double pyramid.
+v top      0  24   0
+v bot      0 -24   0
+m east    20   0   0
+v north    0   0  20
+v south    0   0 -20
+loop east.l north east.r south
+e top east.l bot east.r top
+e top north bot south top
