@@ -25,14 +25,14 @@ roster_name() {
 
 printf '%-12s %6s %6s %9s %9s %9s %9s\n' scene edges fps clear math lines total
 status=0
-runs=(bench-1 bench-2 bench-3 bench-5)
+runs=(bench-1 bench-2 bench-3 bench-5 bench-6)
 for f in "$root"/build/test/roster-*.prg; do runs+=("$(basename "$f" .prg)"); done
 for name in "${runs[@]}"; do
   prg="$root/build/test/$name.prg"
   [ -f "$prg" ] || { echo "bench: $prg missing (run ./build.sh)"; exit 2; }
   case "$name" in
     bench-1) label="1 cube" ;; bench-2) label="2 icosa" ;; bench-3) label="8 cubes" ;;
-    bench-5) label="swarm" ;; roster-*) label=$(roster_name "${name#roster-}") ;;
+    bench-5) label="swarm" ;; bench-6) label="clipping" ;; roster-*) label=$(roster_name "${name#roster-}") ;;
   esac
   log="$out/$name.log"
   taskset -c 0-7 nice -n 10 "$k64run" "$roms" --model "$model" --cycles 200000000 --debugcart \

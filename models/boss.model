@@ -3,6 +3,7 @@
 # weak points on it. Format: tools/GaTool/Models.cs.
 
 model dread_bow
+solid
 title dreadnought
 # The bow: a point opening out through a narrower ring to the full section.
 v tip   -120   0   0
@@ -22,6 +23,7 @@ loop m1 m2 m3 m4
 loop r1 r2 r3 r4
 
 model dread_mid
+solid
 title dreadnought
 # The middle: a box with the bridge tower on top.
 v a1    -120  28  30
@@ -47,6 +49,7 @@ e t1 a1
 e t4 b1
 
 model dread_stern
+solid
 title dreadnought
 # The stern: the section narrowing to the engine block.
 v a1    -120  28  30
@@ -65,6 +68,7 @@ e a3 e3
 e a4 e4
 
 model pod
+solid
 title weak point
 # A turret or engine pod: a spiked double pyramid.
 v top      0  24   0

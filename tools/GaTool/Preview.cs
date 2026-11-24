@@ -19,7 +19,8 @@ static class Preview
 
         for (var row = 0; row < models.Count; row++)
         {
-            var (label, title, v, e) = models[row];
+            var (label, title, v, e, solid) = models[row];
+            var hull = solid ? Models.Hull(v.ToList(), e, label) : default;
             var top = row * (Cell + Label);
             Text(px, width, 2, top + 2, $"{title} {label.ToUpperInvariant().Replace('_', ' ')} {e.Length}");
             var views = new Func<(int X, int Y, int Z), (double, double)>[]
@@ -36,9 +37,25 @@ static class Preview
                 var ox = c * Cell + Cell / 2;
                 var oy = top + Label + Cell / 2;
                 Box(px, width, c * Cell, top + Label, Cell, Cell, 60);
-                foreach (var (a, b) in e)
+                // The perspective view of a solid model shows hidden edges dim, by the
+                // game's rule: a face is seen unless its corners turn anticlockwise.
+                var seen = new bool[Models.NoFace + 1];
+                seen[Models.NoFace] = true;
+                if (solid && c == 3)
+                    for (var f = 0; f < hull.Faces.Count; f++)
+                    {
+                        var (fa, fb, fc) = hull.Faces[f];
+                        var cross = (pts[fb].Item1 - pts[fa].Item1) * (pts[fc].Item2 - pts[fa].Item2)
+                                  - (pts[fb].Item2 - pts[fa].Item2) * (pts[fc].Item1 - pts[fa].Item1);
+                        seen[f] = cross >= 0;
+                    }
+                for (var i = 0; i < e.Length; i++)
+                {
+                    var (a, b) = e[i];
+                    var shown = !(solid && c == 3) || seen[hull.EdgeFaces[i].F1] || seen[hull.EdgeFaces[i].F2];
                     Line(px, width, ox + pts[a].Item1 * scale, oy + pts[a].Item2 * scale,
-                         ox + pts[b].Item1 * scale, oy + pts[b].Item2 * scale, 255);
+                         ox + pts[b].Item1 * scale, oy + pts[b].Item2 * scale, shown ? (byte)255 : (byte)50);
+                }
             }
         }
         Png(outPath, width, height, px);

@@ -48,9 +48,11 @@ assemble build/test/convoy.prg -D TEST_PLAY=1 -D TEST_MISSION=1
 assemble build/test/convoy-control.prg -D TEST_PLAY=1 -D TEST_MISSION=1 -D TEST_AIM_CORNER=1
 assemble build/test/boss.prg -D TEST_PLAY=1 -D TEST_BOSS=1
 assemble build/test/boss-control.prg -D TEST_PLAY=1 -D TEST_BOSS=1 -D TEST_AIM_OFF=60
-for scene in 1 2 3 5; do
+for scene in 1 2 3 5 6; do
   assemble "build/test/bench-$scene.prg" -D BENCH=$scene
 done
+assemble build/test/clip-control.prg -D BENCH=6 -D NO_CLIP=1
+assemble build/test/hidden-control.prg -D BENCH=6 -D NO_HIDDEN=1
 # One roster build per enemy (scene 4 showing item n).
 roster_count=$(sed -n 's/^ROSTER_COUNT = //p' build/gen/models.inc)
 for ((n = 0; n < roster_count; n++)); do

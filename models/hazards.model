@@ -41,6 +41,7 @@ e r4 s2
 e r6 s3
 
 model freighter
+solid
 title freighter
 roster
 # A convoy freighter: a long hull with cargo pods along its back and a raised bridge.

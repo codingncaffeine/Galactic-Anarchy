@@ -31,7 +31,7 @@ umul8:
 ; fits a signed byte). Uses X.
 ; With a' = a + 128 and b' = b + 128: a*b = f(a+b) - f(a-b), and the f index n + 256 is
 ; a' + b' for a+b and a' - b' (+256 when no borrow) for a-b; the carry selects the page.
-smul7:
+.macro  smul_body shift
         eor     #$80
         sta     m_a
         tya
@@ -68,9 +68,20 @@ smul7:
         sta     mul_lo
         lda     mul_hi
         sbc     f_hi+256,x
-@shift: asl     mul_lo
+@shift:
+  .if shift
+        asl     mul_lo
         rol
+  .else
+        sta     mul_hi
+  .endif
         rts
+.endmacro
+
+smul7:  smul_body 1
+
+; smul16: A * Y -> mul_lo/mul_hi (signed 16 bit), the same limits as smul7. Uses X.
+smul16: smul_body 0
 
 ; ---------------------------------------------------------------------------------------
 ; Rotation matrix from three angles (256 steps per turn), as signed bytes with 127 = 1:

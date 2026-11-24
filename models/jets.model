@@ -16,6 +16,7 @@ e nose canopy fin tail
 me canopy root
 
 model gunship
+solid
 title concord gunship
 roster
 # Navy gunship: a boxy hull tapering to the front, with a gun pod on each side.

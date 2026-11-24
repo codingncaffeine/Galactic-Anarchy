@@ -59,9 +59,46 @@ obj_bb_y1:      .res MAX_OBJECTS
 
 scr_x:          .res MAX_VERTS
 scr_y:          .res MAX_VERTS
-scr_ok:         .res MAX_VERTS          ; 0 = on screen, else not drawable
+scr_ok:         .res MAX_VERTS          ; 0 = on screen, else VS_NEVER or VS_OFF + outcode
 edge_a:         .res MAX_EDGES
 edge_b:         .res MAX_EDGES
+
+; Out of the low 32 KB: transformed vertices in world units (for clipping) and the
+; hidden-line state.
+        .segment "HIBSS"
+vw_xl:          .res MAX_VERTS
+vw_xh:          .res MAX_VERTS
+vw_yl:          .res MAX_VERTS
+vw_yh:          .res MAX_VERTS
+vw_zl:          .res MAX_VERTS
+vw_zh:          .res MAX_VERTS
+edge_hide:      .res MAX_EDGES          ; 1 = both of the edge's hull faces turn away
+obj_edge0:      .res MAX_OBJECTS        ; the object's first edge in edge_a/edge_b
+face_vis:       .res 32                 ; 1 = the face is seen (NO_FACE always is)
+hl_base:        .res 1                  ; scratch of the hidden-line pass
+hl_fc:          .res 1
+hl_ec:          .res 1
+hl_e:           .res 1
+hl_f:           .res 1
+hl_i:           .res 3
+hl_ax:          .res 1
+hl_ay:          .res 1
+hl_d:           .res 4                  ; dx1, dy1, dx2, dy2
+hl_p:           .res 2
+model_ptr_y:    .res 1
+oc_t:           .res 2
+
+; scr_ok values. A vertex that failed projection keeps VS_OFF and the outcode bits of
+; the half-spaces it is in; every one of them holds no point of the viewport, so an
+; edge with both ends in the same one is not drawn.
+VS_NEVER        = $80                   ; an empty slot, a dot or a culled object
+VS_OFF          = $40                   ; transformed but not on the viewport
+OC_NEAR         = $01                   ; z < NEAR_Z
+OC_LEFT         = $02                   ; x < -z
+OC_RIGHT        = $04                   ; x > z
+OC_TOP          = $08                   ; y > 5z/8 (+2)
+OC_BOTTOM       = $10                   ; -y > 5z/8 (+2)
+OC_FAR          = $20                   ; z >= FAR: never clipped, the edge is dropped
 
         .segment "CODE"
 
@@ -83,9 +120,14 @@ build_edges:
         sta     model_ptr+1
         lda     model_ecount,y
         sta     cnt
+        ldx     cur_obj
+        lda     edge_total
+        sta     obj_edge0,x
         ldx     edge_total
         ldy     #0
-:       lda     (model_ptr),y
+:       lda     #0
+        sta     edge_hide,x
+        lda     (model_ptr),y
         clc
         adc     vert_total
         sta     edge_a,x
@@ -173,7 +215,11 @@ transform_all:
         cmp     #DOT_Z_HI
         bcc     :+
         jmp     @dot                    ; far away: one point
-:       lda     obj_yaw,x
+:       jsr     cull_object
+        bcc     :+
+        jmp     @skip                   ; nothing of it can be on screen
+:       ldx     cur_obj
+        lda     obj_yaw,x
         sta     rot_yaw
         lda     obj_pitch,x
         sta     rot_pitch
@@ -217,6 +263,7 @@ transform_all:
         lda     cur_vert
         cmp     vmod_count
         bne     @vert
+        jsr     hidden_lines
 @box:   ldx     cur_obj                 ; keep the box for hit tests
         lda     bb_minx
         sta     obj_bb_x0,x
@@ -284,7 +331,7 @@ transform_all:
         lda     model_vcount,y
         sta     cnt
         ldx     vert_out
-        lda     #1
+        lda     #VS_NEVER
 :       sta     scr_ok,x
         inx
         dec     cnt
@@ -382,9 +429,19 @@ transform_vertex:
         to_world wy, acc1, obj_y_lo, obj_y_hi
         to_world wz, acc2, obj_z_lo, obj_z_hi
 
-        ldx     vert_out
-        lda     #1
-        sta     scr_ok,x                ; not drawable until proven otherwise
+        ldx     vert_out                ; kept for clipping
+        lda     wx
+        sta     vw_xl,x
+        lda     wx+1
+        sta     vw_xh,x
+        lda     wy
+        sta     vw_yl,x
+        lda     wy+1
+        sta     vw_yh,x
+        lda     wz
+        sta     vw_zl,x
+        lda     wz+1
+        sta     vw_zh,x
         jsr     project_point
         bcs     @out
         ldx     vert_out
@@ -395,21 +452,377 @@ transform_vertex:
         lda     #0
         sta     scr_ok,x
         jmp     widen_bbox
-@out:   rts
+@out:   jsr     outcode
+        ldx     vert_out
+        sta     scr_ok,x
+        rts
 
-; project_point: the world point wx, wy, wz (16 bit) to the viewport: px, py with carry
-; clear, or carry set when it is behind the near plane, too far or off the viewport.
-project_point:
-        lda     wz+1                    ; near and far limits
-        bmi     @out
-        cmp     #FAR_Z_HI
-        bcs     @out
-        cmp     #0
+; outcode: A = VS_OFF + the OC_ bits of the world point wx, wy, wz.
+outcode:
+        lda     #VS_OFF
+        sta     oc_t+1                  ; the result builds up here
+        lda     wz+1                    ; near: z < NEAR_Z
+        bmi     @near
         bne     :+
         lda     wz
         cmp     #NEAR_Z
-        bcc     @out
-:       lda     wz+1                    ; recip index = z >> 2 (10 bits): page and offset
+        bcs     :+
+@near:  lda     #OC_NEAR
+        jsr     @set
+:       lda     wz+1                    ; far
+        bmi     :+
+        cmp     #FAR_Z_HI
+        bcc     :+
+        lda     #OC_FAR
+        jsr     @set
+:       clc                             ; left: x + z < 0
+        lda     wx
+        adc     wz
+        lda     wx+1
+        adc     wz+1
+        bvc     :+
+        eor     #$80
+:       bpl     :+
+        lda     #OC_LEFT
+        jsr     @set
+:       sec                             ; right: z - x < 0
+        lda     wz
+        sbc     wx
+        lda     wz+1
+        sbc     wx+1
+        bvc     :+
+        eor     #$80
+:       bpl     :+
+        lda     #OC_RIGHT
+        jsr     @set
+:       lda     wz+1                    ; oc_t = (z >> 1) + (z >> 3) + 2, arithmetic shifts
+        cmp     #$80
+        ror
+        sta     oc_t
+        lda     wz
+        ror
+        sta     hl_p                    ; z >> 1 (low byte)
+        lda     oc_t
+        sta     hl_p+1
+        cmp     #$80
+        ror
+        tax
+        lda     hl_p
+        ror
+        tay
+        txa
+        cmp     #$80
+        ror
+        tax
+        tya
+        ror                             ; X/A = z >> 3
+        clc
+        adc     hl_p
+        sta     hl_p
+        txa
+        adc     hl_p+1
+        sta     hl_p+1
+        lda     hl_p
+        clc
+        adc     #2
+        sta     hl_p
+        bcc     :+
+        inc     hl_p+1
+:       sec                             ; top: t - y < 0
+        lda     hl_p
+        sbc     wy
+        lda     hl_p+1
+        sbc     wy+1
+        bvc     :+
+        eor     #$80
+:       bpl     :+
+        lda     #OC_TOP
+        jsr     @set
+:       clc                             ; bottom: t + y < 0
+        lda     hl_p
+        adc     wy
+        lda     hl_p+1
+        adc     wy+1
+        bvc     :+
+        eor     #$80
+:       bpl     :+
+        lda     #OC_BOTTOM
+        jsr     @set
+:       lda     oc_t+1
+        rts
+@set:   ora     oc_t+1
+        sta     oc_t+1
+        rts
+
+; cull_object: carry set when the bounding sphere of object X (radius from its model)
+; is wholly outside the view: behind the near plane, or beyond one of the four sides
+; (tested with twice the radius against x = -z, x = z, y = 5z/8 and -y = 5z/8, which
+; covers the slant of the planes). Expects 0 <= z < DOT_Z. Uses acc0-acc2.
+cull_object:
+        ldy     obj_model,x
+        lda     model_radius,y
+        sta     acc2
+        clc                             ; near: z + r < NEAR_Z
+        adc     obj_z_lo,x
+        lda     obj_z_hi,x
+        adc     #0
+        bne     :+
+        lda     acc2
+        clc
+        adc     obj_z_lo,x
+        cmp     #NEAR_Z
+        bcc     @cull0
+:       asl     acc2                    ; acc2 = 2r
+        lda     #0
+        rol
+        sta     acc2+1
+        clc                             ; left: x + z + 2r < 0
+        lda     obj_x_lo,x
+        adc     obj_z_lo,x
+        sta     acc0
+        lda     obj_x_hi,x
+        adc     obj_z_hi,x
+        bvs     @cull0                   ; |x| that large is off to the side
+        sta     acc0+1
+        lda     acc0
+        clc
+        adc     acc2
+        lda     acc0+1
+        adc     acc2+1
+        bvs     @cull0
+        bmi     @cull0
+        jmp     :+
+@cull0: sec
+        rts
+:        clc                             ; acc0 = z + 2r
+        lda     obj_z_lo,x
+        adc     acc2
+        sta     acc0
+        lda     obj_z_hi,x
+        adc     acc2+1
+        sta     acc0+1
+        sec                             ; right: z + 2r - x < 0
+        lda     acc0
+        sbc     obj_x_lo,x
+        lda     acc0+1
+        sbc     obj_x_hi,x
+        bvs     @cull
+        bmi     @cull
+        lda     obj_z_hi,x              ; acc1 = z/2 + z/8 + 2r
+        lsr
+        sta     acc1+1
+        lda     obj_z_lo,x
+        ror
+        sta     acc1                    ; z / 2
+        lda     acc1+1
+        lsr
+        lsr
+        sta     acc0+1
+        lda     acc1
+        ror
+        sta     acc0
+        lsr     acc0+1
+        ror     acc0                    ; z / 8
+        clc
+        lda     acc1
+        adc     acc0
+        sta     acc1
+        lda     acc1+1
+        adc     acc0+1
+        sta     acc1+1
+        clc
+        lda     acc1
+        adc     acc2
+        sta     acc1
+        lda     acc1+1
+        adc     acc2+1
+        sta     acc1+1
+        sec                             ; top: acc1 - y < 0
+        lda     acc1
+        sbc     obj_y_lo,x
+        lda     acc1+1
+        sbc     obj_y_hi,x
+        bvs     @cull
+        bmi     @cull
+        clc                             ; bottom: acc1 + y < 0
+        lda     acc1
+        adc     obj_y_lo,x
+        lda     acc1+1
+        adc     obj_y_hi,x
+        bvs     @cull
+        bmi     @cull
+        clc
+        rts
+@cull:  sec
+        rts
+
+; hidden_lines: for a solid model, marks which of the object's edges lie only on hull
+; faces that turn away (edge_hide). A face is seen when its three corners, at half
+; screen resolution, turn clockwise or not at all; a face with a corner off the
+; viewport counts as seen. The object's vertices end at vert_out.
+hidden_lines:
+.ifdef NO_HIDDEN
+        rts                             ; control build: every edge drawn
+.endif
+        ldx     cur_obj
+        ldy     obj_model,x
+        lda     model_fcount,y
+        bne     :+
+        rts
+:       sta     hl_fc
+        lda     model_ecount,y
+        sta     hl_ec
+        lda     obj_edge0,x
+        sta     hl_e
+        lda     model_hl_lo,y
+        sta     model_ptr
+        lda     model_hl_hi,y
+        sta     model_ptr+1
+        lda     vert_out
+        sec
+        sbc     vmod_count
+        sta     hl_base
+        lda     #1
+        ldx     #NO_FACE
+        sta     face_vis,x
+        lda     #0
+        sta     hl_f
+        tay
+@face:  clc                             ; the face's three corners
+        lda     (model_ptr),y
+        adc     hl_base
+        sta     hl_i
+        iny
+        lda     (model_ptr),y
+        adc     hl_base
+        sta     hl_i+1
+        iny
+        lda     (model_ptr),y
+        adc     hl_base
+        sta     hl_i+2
+        iny
+        sty     model_ptr_y
+        tax
+        ldy     hl_i+1
+        lda     scr_ok,x
+        ora     scr_ok,y
+        ldx     hl_i
+        ora     scr_ok,x
+        beq     :+
+        jmp     @seen
+:       lda     scr_x,x                 ; corner a at half resolution
+        lsr
+        sta     hl_ax
+        lda     scr_y,x
+        lsr
+        sta     hl_ay
+        lda     scr_x,y                 ; b - a
+        lsr
+        sec
+        sbc     hl_ax
+        sta     hl_d
+        lda     scr_y,y
+        lsr
+        sec
+        sbc     hl_ay
+        sta     hl_d+1
+        ldx     hl_i+2                  ; c - a
+        lda     scr_x,x
+        lsr
+        sec
+        sbc     hl_ax
+        sta     hl_d+2
+        lda     scr_y,x
+        lsr
+        sec
+        sbc     hl_ay
+        sta     hl_d+3
+        ; Seen when P = dx1 * dy2 >= Q = dy1 * dx2, decided from the signs and, when
+        ; they agree, from the logarithms of the magnitudes (hl_log: 16 steps an
+        ; octave, so only faces within a few percent of edge-on can come out wrong).
+        ldx     hl_d                    ; P
+        beq     @p0
+        ldy     hl_d+3
+        beq     @p0
+        lda     hl_log,x
+        clc
+        adc     hl_log,y
+        sta     hl_p                    ; log |P|
+        txa
+        eor     hl_d+3
+        sta     hl_p+1                  ; bit 7: P < 0
+        ldx     hl_d+1                  ; Q
+        beq     @q0
+        ldy     hl_d+2
+        beq     @q0
+        txa
+        eor     hl_d+2
+        eor     hl_p+1
+        bmi     @signs                  ; opposite signs: seen when P > 0
+        lda     hl_log,x
+        clc
+        adc     hl_log,y                ; log |Q|
+        bit     hl_p+1
+        bmi     @neg
+        cmp     hl_p                    ; both > 0: seen when |Q| <= |P|
+        beq     @seen
+        bcc     @seen
+        bcs     @away
+@neg:   cmp     hl_p                    ; both < 0: seen when |Q| >= |P|
+        bcs     @seen
+        bcc     @away
+@q0:                                    ; Q = 0: seen when P > 0
+@signs: bit     hl_p+1
+        bpl     @seen
+        bmi     @away
+@p0:    ldx     hl_d+1                  ; P = 0: seen when Q <= 0
+        beq     @seen
+        ldy     hl_d+2
+        beq     @seen
+        txa
+        eor     hl_d+2
+        bmi     @seen
+@away:  lda     #0
+        .byte   $2C                     ; skip the next instruction
+@seen:  lda     #1
+        ldx     hl_f
+        sta     face_vis,x
+        ldy     model_ptr_y
+        inc     hl_f
+        lda     hl_f
+        cmp     hl_fc
+        beq     :+
+        jmp     @face
+:
+        lda     hl_ec                   ; the edges: Y is at the first face list
+        sta     hl_f                    ; (reused: edges left)
+        ldx     hl_e
+@edge:  lda     (model_ptr),y
+        sty     model_ptr_y
+        stx     hl_base                 ; (reused: the edge being marked)
+        tax
+        lda     face_vis,x
+        sta     hl_ax
+        tya
+        clc
+        adc     hl_ec
+        tay
+        lda     (model_ptr),y           ; the second face list
+        tax
+        lda     face_vis,x
+        ora     hl_ax
+        eor     #1
+        ldx     hl_base
+        sta     edge_hide,x
+        inx
+        ldy     model_ptr_y
+        iny
+        dec     hl_f
+        bne     @edge
+        rts
+
+.macro  recip_from_wz
+        lda     wz+1                    ; recip index = z >> 2 (10 bits): page and offset
         sta     acc_hi
         lda     wz
         lsr     acc_hi
@@ -423,12 +836,26 @@ project_point:
         sta     @rd+2
 @rd:    lda     recip,y
         sta     recip_val
-
         sta     mr_p1+1                 ; the factor into mul_r's operands
         sta     mr_p3+1
         eor     #$FF
         sta     mr_p2+1
         sta     mr_p4+1
+.endmacro
+
+; project_point: the world point wx, wy, wz (16 bit) to the viewport: px, py with carry
+; clear, or carry set when it is behind the near plane, too far or off the viewport.
+project_point:
+        lda     wz+1                    ; near and far limits
+        bmi     @out
+        cmp     #FAR_Z_HI
+        bcs     @out
+        cmp     #0
+        bne     :+
+        lda     wz
+        cmp     #NEAR_Z
+        bcc     @out
+:       recip_from_wz
 
         lda     wx                      ; x offset = |wx| * recip / 256
         ldy     wx+1
@@ -577,30 +1004,3 @@ project:
         rts
 @big:   sec
         rts
-
-; draw_edges: every edge whose two ends are on screen.
-draw_edges:
-        lda     #0
-        sta     cur_vert                ; reused as the edge counter
-@edge:  lda     cur_vert
-        cmp     edge_total
-        bcs     @done
-        tax
-        ldy     edge_a,x
-        lda     edge_b,x
-        tax
-        lda     scr_ok,y
-        ora     scr_ok,x
-        bne     @skip
-        lda     scr_x,y
-        sta     lx0
-        lda     scr_y,y
-        sta     ly0
-        lda     scr_x,x
-        sta     lx1
-        lda     scr_y,x
-        sta     ly1
-        jsr     draw_line
-@skip:  inc     cur_vert
-        jmp     @edge
-@done:  rts

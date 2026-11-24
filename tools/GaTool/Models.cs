@@ -4,6 +4,8 @@
 //   model NAME            a new model; NAME is used in the source as MODEL_NAME
 //   title TEXT            the name shown on the panel (default: NAME in capitals)
 //   roster                list it in the roster scene
+//   solid                 hidden-line removal: edges on the far side of the model's
+//                         convex hull are not drawn (asteroids are always solid)
 //   v NAME X Y Z          a vertex (x right, y up, z forward; -127 to 127)
 //   m NAME X Y Z          a mirrored pair: NAME.l at -X and NAME.r at X
 //   ring NAME N R Z       N vertices NAME0.. on a circle of radius R around the z axis
@@ -30,6 +32,7 @@ static class Models
         public required string Name;
         public string? Title;
         public bool Roster;
+        public bool Solid;
         public readonly List<string> Order = [];
         public readonly Dictionary<string, (int X, int Y, int Z)> Verts = [];
         public readonly List<(string A, string B)> Edges = [];
@@ -38,20 +41,20 @@ static class Models
     }
 
     // For the preview: every model and animation frame as (label, title, vertices, edges).
-    public static List<(string Label, string Title, (int X, int Y, int Z)[] V, (int A, int B)[] E)> Load(string dir)
+    public static List<(string Label, string Title, (int X, int Y, int Z)[] V, (int A, int B)[] E, bool Solid)> Load(string dir)
     {
-        var list = new List<(string, string, (int, int, int)[], (int, int)[])>();
+        var list = new List<(string, string, (int, int, int)[], (int, int)[], bool)>();
         foreach (var file in Directory.GetFiles(dir, "*.model").OrderBy(f => f, StringComparer.Ordinal))
             foreach (var m in Parse(file))
             {
                 var edges = Resolve(m).ToArray();
                 var title = (m.Title ?? m.Name).ToUpperInvariant();
-                list.Add((m.Name, title, m.Order.Select(n => m.Verts[n]).ToArray(), edges));
+                list.Add((m.Name, title, m.Order.Select(n => m.Verts[n]).ToArray(), edges, m.Solid));
                 for (var i = 0; i < m.Frames.Count; i++)
                 {
                     var pos = new Dictionary<string, (int, int, int)>(m.Verts);
                     foreach (var (k, v) in m.Frames[i]) pos[k] = v;
-                    list.Add(($"{m.Name}_f{i + 1}", title, m.Order.Select(n => pos[n]).ToArray(), edges));
+                    list.Add(($"{m.Name}_f{i + 1}", title, m.Order.Select(n => pos[n]).ToArray(), edges, m.Solid));
                 }
             }
         return list;
@@ -119,6 +122,7 @@ static class Models
             {
                 case "title": m.Title = line[6..].Trim(); break;
                 case "roster": m.Roster = true; break;
+                case "solid": m.Solid = true; break;
                 case "v": Put(t[1], (Num(2), Num(3), Num(4))); break;
                 case "m":
                     Put(t[1] + ".l", (-Num(2), Num(3), Num(4)));
@@ -155,6 +159,7 @@ static class Models
                 case "asteroid":
                 {
                     var (v, e) = Asteroid(t[1], Num(2), Num(3), Where);
+                    m.Solid = true;
                     for (var i = 0; i < v.Length; i++) Put($"p{i}", v[i]);
                     foreach (var (a, b) in e) m.Edges.Add(($"p{a}", $"p{b}"));
                     break;
@@ -201,6 +206,7 @@ static class Models
             var key = (Math.Min(index[a], index[b]), Math.Max(index[a], index[b]));
             if (seen.Add(key)) edges.Add((index[a], index[b]));
         }
+        if (m.Solid && m.Frames.Count > 0) throw new ModelException($"{m.Name}: a solid model cannot have frames");
         var used = edges.SelectMany(e => new[] { e.Item1, e.Item2 }).ToHashSet();
         var unused = m.Order.Where((n, i) => !used.Contains(i)).ToList();
         if (unused.Count > 0) throw new ModelException($"{m.Name}: vertices on no edge: {string.Join(", ", unused)}");
@@ -276,6 +282,39 @@ static class Models
         }
         sb.AppendLine($"model_next:     .byte {Col(e => e.Next.ToString())}");
 
+        // Hidden lines (solid models): per model one block of its hull faces as vertex
+        // triples (a, b, c), then for every edge the first and then the second face it
+        // lies on (NO_FACE: none). A face is seen when its projected corners turn
+        // clockwise on the screen (y down).
+        var hulls = new List<string>();
+        sb.AppendLine($"NO_FACE = {NoFace}");
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var (m, label, pos, _) = entries[i];
+            if (!m.Solid) { hulls.Add("0"); continue; }
+            var (faces, ef) = Hull(m.Order.Select(n => pos[n]).ToList(), edgeLists[m.Name], m.Name);
+            var block = faces.SelectMany(f => new[] { f.A, f.B, f.C })
+                .Concat(ef.Select(p => p.F1)).Concat(ef.Select(p => p.F2));
+            Emit.Bytes(sb, $"model_{label}_hl", block);
+            hulls.Add(faces.Count.ToString());
+        }
+        sb.AppendLine($"model_fcount:   .byte {string.Join(", ", hulls)}");
+        sb.AppendLine($"model_hl_lo:    .byte {Col(e => e.M.Solid ? $"<model_{e.Label}_hl" : "0")}");
+        sb.AppendLine($"model_hl_hi:    .byte {Col(e => e.M.Solid ? $">model_{e.Label}_hl" : "0")}");
+
+        // hl_log[b] = 16 * log2 |b| for the signed byte b (0 for b = 0): the hidden-line
+        // pass compares two products by their logarithms.
+        Emit.Bytes(sb, "hl_log", Enumerable.Range(0, 256).Select(b =>
+        {
+            var v = b < 128 ? b : 256 - b;
+            return v == 0 ? 0 : (int)Math.Round(16 * Math.Log2(v));
+        }));
+
+        // Bounding radius for culling whole objects, over the model and its frames.
+        var radius = entries.Select(e => (int)Math.Ceiling(entries.Where(o => o.M == e.M)
+            .SelectMany(o => o.Pos.Values).Max(p => Math.Sqrt(p.X * p.X + p.Y * p.Y + p.Z * p.Z)))).ToList();
+        sb.AppendLine($"model_radius:   .byte {string.Join(", ", radius)}");
+
         // The distance at which the model fills most of the viewport height: the radius
         // that holds 80% of its vertices (thin parts like antennae may stick out) at
         // 64 pixels, radius * 32768 / z = 64 * 256.
@@ -294,6 +333,57 @@ static class Models
         sb.AppendLine($"roster_model:   .byte {string.Join(", ", roster.Select(p => p.i))}");
         return sb.ToString();
     }
+
+    public const int NoFace = 31;
+
+    // The convex hull of a model's vertices as faces (three corners each, turning so that
+    // (b - a) x (c - a) points outwards), and for every edge the hull faces it lies on.
+    // Coplanar corners make one face, so a box has six. Exact integer arithmetic.
+    public static (List<(int A, int B, int C)> Faces, List<(int F1, int F2)> EdgeFaces) Hull(
+        List<(int X, int Y, int Z)> v, IList<(int A, int B)> edges, string name)
+    {
+        var planes = new Dictionary<(long, long, long, long), (int A, int B, int C, long Area, long Nx, long Ny, long Nz, long D)>();
+        var order = new List<(long, long, long, long)>();
+        for (var i = 0; i < v.Count; i++)
+            for (var j = i + 1; j < v.Count; j++)
+                for (var k = j + 1; k < v.Count; k++)
+                {
+                    long ux = v[j].X - v[i].X, uy = v[j].Y - v[i].Y, uz = v[j].Z - v[i].Z;
+                    long wx = v[k].X - v[i].X, wy = v[k].Y - v[i].Y, wz = v[k].Z - v[i].Z;
+                    long nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+                    if (nx == 0 && ny == 0 && nz == 0) continue;
+                    var d = nx * v[i].X + ny * v[i].Y + nz * v[i].Z;
+                    int pos = 0, neg = 0;
+                    foreach (var p in v)
+                    {
+                        var s = nx * p.X + ny * p.Y + nz * p.Z - d;
+                        if (s > 0) pos++; else if (s < 0) neg++;
+                    }
+                    if (pos > 0 && neg > 0) continue;
+                    if (pos == 0 && neg == 0) continue;     // a flat model has no inside
+                    int a = i, b = j, c = k;
+                    if (pos > 0) { nx = -nx; ny = -ny; nz = -nz; d = -d; (b, c) = (c, b); }
+                    var g = Gcd(Gcd(Math.Abs(nx), Math.Abs(ny)), Gcd(Math.Abs(nz), Math.Abs(d)));
+                    var key = (nx / g, ny / g, nz / g, d / g);
+                    var area = nx * nx + ny * ny + nz * nz;
+                    if (!planes.TryGetValue(key, out var have)) order.Add(key);
+                    else if (have.Area >= area) continue;
+                    planes[key] = (a, b, c, area, nx, ny, nz, d);
+                }
+        if (order.Count == 0) throw new ModelException($"{name}: solid, but its vertices are flat");
+        if (order.Count >= NoFace) throw new ModelException($"{name}: {order.Count} hull faces (at most {NoFace - 1})");
+        var faces = order.Select(k => planes[k]).ToList();
+        bool On(int f, int p) => faces[f].Nx * v[p].X + faces[f].Ny * v[p].Y + faces[f].Nz * v[p].Z == faces[f].D;
+        var ef = new List<(int, int)>();
+        foreach (var (ea, eb) in edges)
+        {
+            var on = Enumerable.Range(0, faces.Count).Where(f => On(f, ea) && On(f, eb)).Take(2).ToList();
+            ef.Add((on.Count > 0 ? on[0] : NoFace, on.Count > 1 ? on[1] : on.Count > 0 ? on[0] : NoFace));
+        }
+        return (faces.Select(f => (f.A, f.B, f.C)).ToList(), ef);
+    }
+
+    static long Gcd(long a, long b) { while (b != 0) (a, b) = (b, a % b); return a == 0 ? 1 : a; }
 
     static ((int, int, int)[], (int, int)[]) Cube(int s)
     {

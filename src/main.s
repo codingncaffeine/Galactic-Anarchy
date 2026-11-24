@@ -12,6 +12,8 @@
 ;   BREAK_MUL=1  corrupt one multiply table entry first (control for TEST_MUL: must fail)
 ;   BENCH=n      run scene n for two measuring windows, store the second window's figures
 ;                at RESULTS and pass
+;   NO_CLIP=1    drop edges with an end off the viewport (control for the clipping check)
+;   NO_HIDDEN=1  draw hidden edges too (control for the hidden-line check)
 ; Without options it is the playable benchmark: the fire button cycles the scenes.
 
         .include "hw.inc"
@@ -23,6 +25,7 @@
         .include "math.s"
         .include "gfx.s"
         .include "xform.s"
+        .include "clip.s"
         .include "panel.s"
         .include "vars.inc"
 
@@ -806,10 +809,10 @@ txt_bottom:     scr "CLEAR        MATH        LINES"
 
 ; Scenes: object count, then per object: model, x, y, z (16 bit each), turn rates.
 ; Scene 4 is the roster, built by roster_setup instead.
-SCENE_COUNT = 5
+SCENE_COUNT = 6
 SCENE_ROSTER = 4
-scene_lo:       .byte <scene_1, <scene_2, <scene_3, 0, <scene_5
-scene_hi:       .byte >scene_1, >scene_2, >scene_3, 0, >scene_5
+scene_lo:       .byte <scene_1, <scene_2, <scene_3, 0, <scene_5, <scene_6
+scene_hi:       .byte >scene_1, >scene_2, >scene_3, 0, >scene_5, >scene_6
 
 .macro  object model, px, py, pz, dyaw, dpitch, droll
         .byte   model
@@ -839,6 +842,10 @@ scene_5:        .byte 6                 ; a mixed enemy group at fighting distan
                 object MODEL_MOTH, -330, -130, 900, 1, 0, 1
                 object MODEL_ROCK_L, 400, 150, 1000, 1, 2, 1
                 object MODEL_ROCK_M, 60, -150, 700, 2, 1, 3
+scene_6:        .byte 3                 ; clipping: ships across the sides and the near plane
+                object MODEL_DREAD_MID, -170, 10, 230, 1, 0, 0
+                object MODEL_ROCK_L, 300, 110, 330, 1, 2, 1
+                object MODEL_GUNSHIP, 40, -150, 280, 2, 0, 1
 
 txt_blank:      scr "                                      "
                 .byte 0
@@ -861,6 +868,7 @@ txt_blank:      scr "                                      "
         .assert <recip = 0, error, "recip is not page aligned"
         .include "font.inc"
         .include "models.inc"
+        .assert NO_FACE < 32, error, "face_vis holds 32 faces"
         .include "sprites.inc"
         .include "music.inc"
         .include "scores.inc"

@@ -17,7 +17,8 @@ for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.pr
          build/test/boss.prg build/test/boss-control.prg build/test/table.prg \
          build/test/disk-save.prg build/test/disk-load.prg build/galactic-anarchy.d64 \
          build/test/events.prg build/test/events-control.prg build/test/ring.prg \
-         build/test/ring-control.prg build/test/convoy.prg build/test/convoy-control.prg; do
+         build/test/ring-control.prg build/test/convoy.prg build/test/convoy-control.prg \
+         build/test/bench-6.prg build/test/clip-control.prg build/test/hidden-control.prg; do
   [ -f "$root/$f" ] || { echo "preflight: $f missing (run ./build.sh)"; fail=1; }
 done
 [ "$fail" = 0 ] || exit 2
@@ -158,6 +159,29 @@ check convoy-control 124 --cycles 150000000 --debugcart --autostart "$root/build
 # (the shields run out first: 2, or the time: 124).
 check boss 0 --cycles 150000000 --debugcart --autostart "$root/build/test/boss.prg"
 check_not boss-control 0 --cycles 150000000 --debugcart --autostart "$root/build/test/boss-control.prg"
+
+# Pictures of the clipping scene (6: ships across the sides and the near plane): both
+# bitmaps after the run, summed up by tools/bitmap-stats.awk as "left right top lit".
+scene_stats() {  # scene_stats NAME PRG
+  run --cycles 200000000 --debugcart --autostart "$2" --dump a000:1f40 --dump e000:1f40 \
+    >"$out/$1.log" 2>&1 || { echo "x x x x"; return; }
+  awk -f "$root/test/bitmap-stats.awk" "$out/$1.log"
+}
+read -r cl cr ct clit < <(scene_stats clip "$root/build/test/bench-6.prg")
+read -r nl nr nt nlit < <(scene_stats clip-control "$root/build/test/clip-control.prg")
+read -r hl hr ht hlit < <(scene_stats hidden-control "$root/build/test/hidden-control.prg")
+verdict() {  # verdict NAME CONDITION DETAIL
+  if eval "$2"; then echo "ok    $1"; passed=$((passed + 1))
+  else echo "FAIL  $1: $3"; failed=$((failed + 1)); fi
+}
+# Clipped edges reach the viewport's left and right sides; without clipping
+# (the control) they stop short of the left side, where the big ship crosses.
+num() { [[ "$1" =~ ^[0-9]+$ ]]; }
+verdict clip 'num "$cl" && [ "$cl" -gt 0 ] && [ "$cr" -gt 0 ]' "border pixels left/right $cl/$cr"
+verdict clip-control 'num "$nl" && [ "$nl" = 0 ]' "left border pixels $nl, expected none"
+# Hidden lines: the solid ships show at least 5% fewer pixels than with every edge drawn.
+verdict hidden 'num "$clit" && num "$hlit" && [ $((clit * 20)) -lt $((hlit * 19)) ]' \
+  "lit pixels $clit, with every edge $hlit"
 
 # The fast multiply equals shift-and-add for all 65,536 pairs; the control has one table
 # entry corrupted and must fail (1).
