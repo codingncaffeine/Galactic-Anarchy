@@ -13,7 +13,7 @@ fail=0
 [ -x "$k64run" ] || { echo "preflight: k64run not found at $k64run (set K64RUN)"; fail=1; }
 [ -d "$roms" ] || { echo "preflight: ROM folder not found at $roms (set K64_ROMS)"; fail=1; }
 for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.prg \
-         build/test/mul.prg build/test/mul-control.prg; do
+         build/test/mul.prg build/test/mul-control.prg build/test/play.prg build/test/play-control.prg; do
   [ -f "$root/$f" ] || { echo "preflight: $f missing (run ./build.sh)"; fail=1; }
 done
 [ "$fail" = 0 ] || exit 2
@@ -34,43 +34,55 @@ check() {  # check NAME EXPECTED_STATUS ARGS...
   fi
 }
 
-# check_panel NAME: the play build's panel reads "SCENE" at row 21, column 1 of buffer 0's
-# screen ($8400 + 21*40 + 1 = $8749), in the game's screen codes.
+# check_panel NAME: the play build's title panel reads "GAL" at row 21, column 12 of buffer
+# 0's screen ($8400 + 21*40 + 12 = $8754), in the game's screen codes.
 check_panel() {
   local name="$1"; shift
-  run "$@" --dump 8749:5 >"$out/$name.log" 2>&1
+  run "$@" --dump 8754:3 >"$out/$name.log" 2>&1
   local got=$?
   local text
-  text=$(grep -i '^8749:' "$out/$name.log" | cut -d' ' -f2-6 | tr 'A-F' 'a-f')
-  if [ "$got" = 0 ] && [ "$text" = "13 03 05 0e 05" ]; then
+  text=$(grep -i '^8754:' "$out/$name.log" | cut -d' ' -f2-4 | tr 'A-F' 'a-f')
+  if [ "$got" = 0 ] && [ "$text" = "07 01 0c" ]; then
     echo "ok    $name"; passed=$((passed + 1))
   else
     echo "FAIL  $name: exit $got, panel bytes '$text' (log: build/test-out/$name.log)"; failed=$((failed + 1))
   fi
 }
 
-# check_roster NAME MOVED: the play build opens on the enemy roster and moves on by
-# itself. roster_item (address from the linker's label file) must be past 0 when MOVED
-# is 1, and still 0 when it is 0.
-check_roster() {
-  local name="$1" moved="$2"; shift 2
-  local addr
-  addr=$(sed -n 's/^al 00\([0-9A-F]*\) \.roster_item$/\1/p' "$root/build/galactic-anarchy.labels")
-  run "$@" --dump "$addr:1" >"$out/$name.log" 2>&1
+# Through Kernal64 as a frontend runs it (k64host + the core), with the joystick held.
+k64host="${K64HOST:-$root/../Kernal64/bin/k64host}"
+core="${K64CORE:-$root/../Kernal64/bin/kernal64_libretro.so}"
+system="${K64_SYSTEM:-$HOME/.config/retroarch/system}"
+label_addr() { sed -n "s/^al 0000\([0-9A-F]*\) \.$1\$/\1/p" "$root/build/galactic-anarchy.labels"; }
+# check_host NAME FRAMES LABEL VALUE [--hold ...]: after FRAMES frames, LABEL's byte = VALUE.
+check_host() {
+  local name="$1" frames="$2" label="$3" value="$4"; shift 4
+  mkdir -p "$out/save"
+  taskset -c 0-7 nice -n 10 "$k64host" "$core" --content "$root/build/galactic-anarchy.prg" \
+    --system "$system" --save "$out/save" --frames "$frames" --expect-ram "$(label_addr "$label")" "$value" \
+    --dump "$out/$name.ppm" "$@" >"$out/$name.log" 2>&1
   local got=$?
-  local item
-  item=$(grep -i "^$addr:" "$out/$name.log" | cut -d' ' -f2)
-  local is_moved=0
-  [ -n "$item" ] && [ "$((16#$item))" -gt 0 ] && is_moved=1
-  if [ "$got" = 0 ] && [ -n "$item" ] && [ "$is_moved" = "$moved" ]; then
+  if [ "$got" = 0 ]; then
     echo "ok    $name"; passed=$((passed + 1))
   else
-    echo "FAIL  $name: exit $got, roster item '$item' (log: build/test-out/$name.log)"; failed=$((failed + 1))
+    echo "FAIL  $name: $(grep -m1 FAIL "$out/$name.log") (log: build/test-out/$name.log)"; failed=$((failed + 1))
   fi
 }
-check_roster roster-advances 1 --frames 1200 --autostart "$root/build/galactic-anarchy.prg"
-# Control: before the first enemy's time is up (about 75 drawn frames of 96) it has not.
-check_roster roster-not-yet 0 --frames 300 --autostart "$root/build/galactic-anarchy.prg"
+if [ -x "$k64host" ] && [ -f "$core" ]; then
+  # Fire (RetroPad B, the core's default) on the title starts a game: state 2 = play.
+  check_host fire-starts-game 900 state 2 --hold 450 460 0 b 1
+  # Control: A is not fire, so the title stays (state 0).
+  check_host other-button-does-not 900 state 0 --hold 450 460 0 a 1
+  # Right held: the crosshair runs from the middle (128) to its stop at 248.
+  check_host crosshair-right 900 cross_x 248 --hold 450 460 0 b 1 --hold 600 700 0 right 1
+else
+  echo "FAIL  k64host or the core not found ($k64host, $core)"; failed=$((failed + 1))
+fi
+
+# A game played by the test build: it aims at enemies and fires; passes after 5 kills.
+check play 0 --cycles 150000000 --debugcart --autostart "$root/build/test/play.prg"
+# Control: the same, aiming 60 pixels to the side, must not get there.
+check play-control 124 --cycles 150000000 --debugcart --autostart "$root/build/test/play-control.prg"
 
 # The fast multiply equals shift-and-add for all 65,536 pairs; the control has one table
 # entry corrupted and must fail (1).
@@ -78,7 +90,7 @@ check mul 0 --cycles 40000000 --debugcart --autostart "$root/build/test/mul.prg"
 check mul-control 1 --cycles 40000000 --debugcart --autostart "$root/build/test/mul-control.prg"
 
 for model in pal ntsc; do
-  # The game starts and its panel is drawn.
+  # The game starts on its title: "GAL" at row 21, column 12 of the panel.
   check_panel "boot-$model" --model "$model" --frames 400 \
         --autostart "$root/build/galactic-anarchy.prg" --png "$out/boot-$model.png"
   # The raster interrupt runs: 50 frames counted, result 0 written to the debug port.

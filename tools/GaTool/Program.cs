@@ -35,6 +35,7 @@ var outDir = args[1];
 Directory.CreateDirectory(outDir);
 File.WriteAllText(Path.Combine(outDir, "tables.inc"), Tables.Generate());
 File.WriteAllText(Path.Combine(outDir, "font.inc"), Font.Generate());
+File.WriteAllText(Path.Combine(outDir, "sprites.inc"), Sprites.Generate());
 try
 {
     File.WriteAllText(Path.Combine(outDir, "models.inc"), Models.Generate(args[2]));
@@ -129,6 +130,23 @@ static class Tables
         Emit.Bytes(sb, "row_lo", row.Select(v => v & 0xFF));
         Emit.Bytes(sb, "row_hi", row.Select(v => v >> 8));
 
+        // Explosion bursts: for each of 2 sizes and 12 steps of age, 8 sparks as line segments
+        // from (inner) to (outer) offsets around the centre, signed bytes. Index =
+        // ((size * 12 + age) * 8 + spark) for each of burst_x0/y0/x1/y1.
+        var bx0 = new List<int>(); var by0 = new List<int>(); var bx1 = new List<int>(); var by1 = new List<int>();
+        for (var size = 0; size < 2; size++)
+            for (var age = 0; age < 12; age++)
+                for (var k = 0; k < 8; k++)
+                {
+                    var a = 2 * Math.PI * (k + 0.5 * (age & 1)) / 8 + 0.3 * k;
+                    var r0 = (size == 0 ? 1.0 : 2.0) * (age + 1);
+                    var r1 = r0 + (size == 0 ? 3 : 6);
+                    bx0.Add((int)Math.Round(r0 * Math.Cos(a))); by0.Add((int)Math.Round(r0 * Math.Sin(a)));
+                    bx1.Add((int)Math.Round(r1 * Math.Cos(a))); by1.Add((int)Math.Round(r1 * Math.Sin(a)));
+                }
+        Emit.Bytes(sb, "burst_x0", bx0); Emit.Bytes(sb, "burst_y0", by0);
+        Emit.Bytes(sb, "burst_x1", bx1); Emit.Bytes(sb, "burst_y1", by1);
+
         // Pixel masks for x & 7, leftmost pixel = bit 7.
         Emit.Bytes(sb, "pixel_mask", Enumerable.Range(0, 8).Select(i => 0x80 >> i));
         return sb.ToString();
@@ -182,6 +200,7 @@ static class Font
         ['.'] = [".....", ".....", ".....", ".....", ".....", ".....", "..#.."],
         [':'] = [".....", "..#..", ".....", ".....", ".....", "..#..", "....."],
         ['-'] = [".....", ".....", ".....", ".###.", ".....", ".....", "....."],
+        ['*'] = [".....", ".###.", "#####", "#####", "#####", ".###.", "....."],
         [' '] = [".....", ".....", ".....", ".....", ".....", ".....", "....."],
     };
 
@@ -212,6 +231,113 @@ static class Font
         sb.AppendLine("        .segment \"RODATA\"");
         Emit.Bytes(sb, "font", data);
         sb.AppendLine("FONT_SIZE = * - font");
+        return sb.ToString();
+    }
+}
+
+static class Sprites
+{
+    // Hardware sprites, 24 x 21, one '#' per pixel. Each becomes a 64-byte block; the game
+    // copies the blocks into both VIC banks. Order = block number.
+    static readonly (string Name, string[] Rows)[] All =
+    [
+        ("crosshair", Crosshair()),
+        ("bolt_small",
+        [
+            "........................",
+            "........................",
+            "........................",
+            "........................",
+            "........................",
+            "........................",
+            "........................",
+            "..........###...........",
+            ".........#####..........",
+            "........##.#.##.........",
+            "........#######.........",
+            "........##.#.##.........",
+            ".........#####..........",
+            "..........###...........",
+            "........................",
+            "........................",
+            "........................",
+            "........................",
+            "........................",
+            "........................",
+            "........................",
+        ]),
+        ("bolt_big",
+        [
+            "........................",
+            "........................",
+            "..........#..#..........",
+            "......#...........#.....",
+            "........#######.........",
+            ".......##.....##........",
+            "......##.#####.##.......",
+            ".....##.#######.##......",
+            ".....#.#########.#......",
+            ".#...#.###...###.#...#..",
+            ".....#.##.....##.#......",
+            ".#...#.###...###.#...#..",
+            ".....#.#########.#......",
+            ".....##.#######.##......",
+            "......##.#####.##.......",
+            ".......##.....##........",
+            "........#######.........",
+            "......#...........#.....",
+            "..........#..#..........",
+            "........................",
+            "........................",
+        ]),
+    ];
+
+    // A ring of radius 8 with gaps at the four points, ticks outside them and a centre dot,
+    // centred on column 11, row 10 (the game positions the sprite by that pixel).
+    static string[] Crosshair()
+    {
+        var g = new char[21, 24];
+        for (var y = 0; y < 21; y++)
+            for (var x = 0; x < 24; x++)
+            {
+                double dx = x - 11, dy = y - 10;
+                var d = Math.Sqrt(dx * dx + dy * dy);
+                var onRing = Math.Abs(d - 8) < 0.55 && Math.Abs(dx) > 2.5 && Math.Abs(dy) > 2.5;
+                var tick = (y == 10 && (x is >= 1 and <= 5 or >= 17 and <= 21))
+                           || (x == 11 && (y is >= 0 and <= 4 or >= 16 and <= 20));
+                g[y, x] = onRing || tick || (x == 11 && y == 10) ? '#' : '.';
+            }
+        return Enumerable.Range(0, 21)
+            .Select(y => new string(Enumerable.Range(0, 24).Select(x => g[y, x]).ToArray())).ToArray();
+    }
+
+    public static string Generate()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("; Generated by tools/GaTool. Do not edit.");
+        sb.AppendLine("        .segment \"RODATA\"");
+        sb.AppendLine("sprite_data:");
+        for (var n = 0; n < All.Length; n++)
+        {
+            var (name, rows) = All[n];
+            if (rows.Length != 21) throw new InvalidOperationException($"sprite {name}: {rows.Length} rows");
+            var bytes = new List<int>();
+            foreach (var row in rows)
+            {
+                var r = row.PadRight(24, '.')[..24];
+                for (var b = 0; b < 3; b++)
+                {
+                    var v = 0;
+                    for (var bit = 0; bit < 8; bit++)
+                        if (r[b * 8 + bit] == '#') v |= 0x80 >> bit;
+                    bytes.Add(v);
+                }
+            }
+            bytes.Add(0);
+            sb.AppendLine($"SPRITE_{name.ToUpperInvariant()} = {n}");
+            Emit.Bytes(sb, $"sprite_{name}", bytes);
+        }
+        sb.AppendLine($"SPRITE_COUNT = {All.Length}");
         return sb.ToString();
     }
 }

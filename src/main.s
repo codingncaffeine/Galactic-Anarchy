@@ -95,6 +95,9 @@ start:
         sta     frame
         sta     frame+1
         sta     flip_pending
+.ifndef BENCH
+        sta     game_on                 ; until the game has set itself up
+.endif
         lda     #1
         sta     back
 
@@ -132,10 +135,10 @@ start:
         sta     roster_item
   .endif
         lda     #BENCH
-.else
-        lda     #SCENE_ROSTER           ; the play build opens on the enemy roster
-.endif
         jsr     start_scene
+.else
+        jmp     game_main               ; the play build is the game
+.endif
 
 ; ---------------------------------------------------------------------------------------
 frame_loop:
@@ -413,6 +416,10 @@ add_elapsed:
 ; ---------------------------------------------------------------------------------------
 irq_top:
         pha
+        txa
+        pha
+        tya
+        pha
         lda     #D011_BITMAP
         sta     VIC_CTRL1
         lda     #D018_BITMAP
@@ -436,6 +443,17 @@ irq_top:
         sta     IRQ_VECTOR+1
         lda     #$01
         sta     VIC_IRQ_FLAGS
+.ifndef BENCH
+        lda     game_on                 ; the game's 50/60 Hz work
+        beq     :+
+        cli                             ; (the split interrupt may come during it)
+        jsr     irq_game
+:
+.endif
+        pla
+        tay
+        pla
+        tax
         pla
 nmi_ignore:
         rti
@@ -821,6 +839,8 @@ scene_5:        .byte 6                 ; a mixed enemy group at fighting distan
 txt_blank:      scr "                                      "
                 .byte 0
 
+        .include "game.s"
+        .include "sound.s"
         .include "tables.inc"
 ; The multiply and reciprocal code patch the low byte of a table address or index a
 ; whole page, so these tables must start on page boundaries.
@@ -831,3 +851,4 @@ txt_blank:      scr "                                      "
         .assert <recip = 0, error, "recip is not page aligned"
         .include "font.inc"
         .include "models.inc"
+        .include "sprites.inc"

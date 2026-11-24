@@ -146,6 +146,9 @@ draw_line:
         jmp     (line_vec)
 
 ; Moving to the cell below or above (ptr +- 320), Y to its first or last line.
+; JMP (line_vec) reads its two bytes from the same page: the vector must not start at $FF.
+        .assert <line_vec <> $FF, error, "line_vec at $FF"
+
 cell_down:
         clc
         lda     ptr
