@@ -14,23 +14,28 @@ kill quota, and the best scores are saved to disk.
 
 ## Status
 
-Early development, and playable. On the title screen press fire to start. Steer the
-crosshair with the joystick and hold fire to shoot. Enemies come out of the distance,
-first as dots and then as wireframes once they are in range of your lasers, weaving,
-firing shots that home in on you, and veering away as they pass. Asteroids keep coming
-straight at you and break into smaller rocks. Their yellow shots can be shot down too.
-Every hit on you costs a shield block; when the shields are gone the game is over. Each
-sector ends when its kill quota is reached, and the next one is faster, with more
-enemies at once and more of them firing.
+Playable from start to finish, still in development. The title shows the high scores and
+a demo in turn; press fire to start. A game is a journey across the sector map, left to
+right, picking your route lane by lane:
+
+- Each sector belongs to the Concord, the Corsairs or the Swarm, whose fighters and
+  insect machines you meet there, or is an asteroid field. Some are convoys of freighters
+  to raid, and some are derelict stations where you thread rings before the reactor blows.
+  A sector is cleared at its kill quota, and the farther across the map, the harder.
+- Rival factions turn up in each other's space and fight among themselves;
+  what they destroy counts toward your quota.
+- The Dreadnought waits in the middle of the map and at its end: knock out its four weak
+  points before it jumps away.
+- High scores are saved to the disk with your initials.
+
+Steer with the joystick (the view turns as you aim) and hold fire to shoot. Enemy shots
+can be shot down. Every hit costs a shield block, a cleared sector repairs two, and the
+game ends when they are gone. Up or down on the title turns the music on or off.
 
 <p align="center"><img src="assets/screenshot.png" alt="Galactic Anarchy running in Kernal64" width="640"></p>
 
-The enemies so far: the Concord Lancer and Gunship, the Corsair Raider and Mauler, the
-insect machines of the Swarm (Skitter, Hornet, Moth, Mantis and their Hive), crystal
-mines and asteroids. They are made in `models/`, in a plain text format.
-
-Not done yet: the sector map, the Dreadnought and other bosses, music, saving high
-scores to disk, and speed work for busier scenes. The plan is in the project's notes.
+All the ships, rocks and insects are made in `models/` and the music in `music/`, both in
+plain text formats compiled by the project's own tool.
 
 ## Playing it
 
