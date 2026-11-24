@@ -1,0 +1,23 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache the cc65 toolchain
+        uses: actions/cache@v4
+        with:
+          path: .toolchain
+          key: cc65-${{ hashFiles('tools/toolchain.sh') }}
+      - name: Build
+        run: ./build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: galactic-anarchy
+          path: build/galactic-anarchy.prg

@@ -1,0 +1,12 @@
+# Never committed: plans and notes, build output, the fetched toolchain,
+# ROMs and anything made from them.
+/local-notes/
+/bin/
+/build/
+/.toolchain/
+/scratch/
+
+*.rom
+*.bin
+*.zip
+obj/
