@@ -19,7 +19,6 @@ KERNAL_SAVE     = $FFD8
 KERNAL_FREE_ZP  = $FB                   ; two bytes the KERNAL leaves to programs
 
         .segment "BSS"
-kernal_zp:      .res 254                ; $02-$FF as the KERNAL left them at start-up
 game_zp:        .res 254                ; the game's, while the KERNAL works
 hs_table:       .res HS_COUNT * HS_SIZE
 hs_table_end:
@@ -48,6 +47,10 @@ txt_saved:      scr "SCORES SAVED"
 txt_nodisk:     scr "NO DISK - SCORES KEPT IN MEMORY"
                 .byte 0
 
+        .segment "CODE"
+
+        .segment "HIBSS2"               ; (written before BSS is free: see cfg/game.cfg)
+kernal_zp:      .res 254                ; $02-$FF as the KERNAL left them at start-up
         .segment "CODE"
 
 ; keep_kernal_zp: the very first thing at start-up: the KERNAL's zero page, for disk use.

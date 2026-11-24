@@ -60,11 +60,12 @@ obj_bb_y1:      .res MAX_OBJECTS
 scr_x:          .res MAX_VERTS
 scr_y:          .res MAX_VERTS
 scr_ok:         .res MAX_VERTS          ; 0 = on screen, else VS_NEVER or VS_OFF + outcode
-edge_a:         .res MAX_EDGES
-edge_b:         .res MAX_EDGES
 
 ; Out of the low 32 KB: transformed vertices in world units (for clipping) and the
 ; hidden-line state.
+        .segment "HIBSS2"
+edge_a:         .res MAX_EDGES
+edge_b:         .res MAX_EDGES
         .segment "HIBSS"
 vw_xl:          .res MAX_VERTS
 vw_xh:          .res MAX_VERTS

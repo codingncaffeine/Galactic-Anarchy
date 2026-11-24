@@ -550,7 +550,7 @@ init_display:
         rts
 
 ; copy_tables: the TABLES segment from where it was loaded to $9000.
-        .import __TABLES_LOAD__, __TABLES_RUN__, __TABLES_SIZE__
+        .import __TABLES_LOAD__, __TABLES_RUN__, __TABLES_SIZE__, __BSS_SIZE__
 copy_tables:
         lda     #<__TABLES_LOAD__
         sta     str_ptr
@@ -869,6 +869,7 @@ txt_blank:      scr "                                      "
         .include "font.inc"
         .include "models.inc"
         .assert NO_FACE < 32, error, "face_vis holds 32 faces"
+        .assert __TABLES_LOAD__ = $0810 && __BSS_SIZE__ <= __TABLES_SIZE__, error, "BSS must lie over the tables' load image"
         .include "sprites.inc"
         .include "music.inc"
         .include "scores.inc"
