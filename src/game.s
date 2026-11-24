@@ -2085,6 +2085,8 @@ game_reset:
         jsr     heat_reset
         lda     #0                      ; convoys are raided unless the player says
         sta     conv_side
+        sta     kills                   ; nothing flown yet (the map shows the count)
+        sta     quota
         jsr     panel_clear
         print_at PANEL_ROW+1, 1, txt_score
         print_at PANEL_ROW+3, 1, txt_kills
