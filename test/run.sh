@@ -12,7 +12,8 @@ roms="${K64_ROMS:-$HOME/.config/retroarch/system/kernal64}"
 fail=0
 [ -x "$k64run" ] || { echo "preflight: k64run not found at $k64run (set K64RUN)"; fail=1; }
 [ -d "$roms" ] || { echo "preflight: ROM folder not found at $roms (set K64_ROMS)"; fail=1; }
-for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.prg; do
+for f in build/galactic-anarchy.prg build/test/irq.prg build/test/irq-control.prg \
+         build/test/mul.prg build/test/mul-control.prg; do
   [ -f "$root/$f" ] || { echo "preflight: $f missing (run ./build.sh)"; fail=1; }
 done
 [ "$fail" = 0 ] || exit 2
@@ -33,11 +34,30 @@ check() {  # check NAME EXPECTED_STATUS ARGS...
   fi
 }
 
+# check_panel NAME: the play build's panel reads "SCENE" at row 21, column 1 of buffer 0's
+# screen ($8400 + 21*40 + 1 = $8749), in the game's screen codes.
+check_panel() {
+  local name="$1"; shift
+  run "$@" --dump 8749:5 >"$out/$name.log" 2>&1
+  local got=$?
+  local text
+  text=$(grep -i '^8749:' "$out/$name.log" | cut -d' ' -f2-6 | tr 'A-F' 'a-f')
+  if [ "$got" = 0 ] && [ "$text" = "13 03 05 0e 05" ]; then
+    echo "ok    $name"; passed=$((passed + 1))
+  else
+    echo "FAIL  $name: exit $got, panel bytes '$text' (log: build/test-out/$name.log)"; failed=$((failed + 1))
+  fi
+}
+
+# The fast multiply equals shift-and-add for all 65,536 pairs; the control has one table
+# entry corrupted and must fail (1).
+check mul 0 --cycles 40000000 --debugcart --autostart "$root/build/test/mul.prg"
+check mul-control 1 --cycles 40000000 --debugcart --autostart "$root/build/test/mul-control.prg"
+
 for model in pal ntsc; do
-  # The title is on screen after boot and RUN.
-  check "boot-$model" 0 --model "$model" --frames 300 \
-        --autostart "$root/build/galactic-anarchy.prg" \
-        --expect "GALACTIC ANARCHY" --png "$out/boot-$model.png"
+  # The game starts and its panel is drawn.
+  check_panel "boot-$model" --model "$model" --frames 400 \
+        --autostart "$root/build/galactic-anarchy.prg" --png "$out/boot-$model.png"
   # The raster interrupt runs: 50 frames counted, result 0 written to the debug port.
   check "irq-$model" 0 --model "$model" --cycles 8000000 --debugcart \
         --autostart "$root/build/test/irq.prg"
