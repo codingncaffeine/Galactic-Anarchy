@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/screenshot.png" alt="Galactic Anarchy on a Commodore 64" width="640"></p>
+<p align="center"><img src="assets/cover.jpg" alt="Galactic Anarchy cover" width="480"></p>
 
 # Galactic Anarchy
 
@@ -6,8 +6,8 @@ A first-person space shooter for the Commodore 64, drawn in 3D vector graphics. 
 a stock PAL or NTSC machine, written in 6502 assembly.
 
 The galaxy's government has fallen, and three factions fight over what is left: the
-remains of the old navy, pirates, and a swarm of mining drones that has turned on
-everyone. You fly an interceptor across the sector map from the outer rim to the old
+remains of the old navy, pirates, and the Swarm, mining machines that grew into
+insect shapes and turned on everyone. You fly an interceptor across the sector map from the outer rim to the old
 capital, choosing your route as you go. Sectors get harder the farther you get, and the
 factions fight each other as well as you. A dogfight sector is cleared by reaching its
 kill quota, and the best scores are saved to disk.
@@ -18,6 +18,8 @@ Early development. The current build is the engine benchmark: it opens on the en
 roster, turning each enemy in the double-buffered hires viewport with its name on the
 panel and moving on to the next by itself. The panel also shows the frame rate and how
 many cycles each stage of a frame takes. There is no game to play yet.
+
+<p align="center"><img src="assets/screenshot.png" alt="The engine benchmark running in Kernal64" width="640"></p>
 
 The enemies so far: the Concord Lancer and Gunship, the Corsair Raider and Mauler, the
 insect machines of the Swarm (Skitter, Hornet, Moth, Mantis, Centipede and their Hive),

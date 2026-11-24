@@ -7,6 +7,9 @@
 /scratch/
 
 *.rom
+# Source images dropped in the project root (the README uses copies in assets/).
+/*.jpg
+/*.png
 *.bin
 *.zip
 obj/
