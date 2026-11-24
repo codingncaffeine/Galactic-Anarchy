@@ -12,6 +12,10 @@ vy:             .res 1
 vz:             .res 1
 acc_lo:         .res 1
 acc_hi:         .res 1
+acc0:           .res 2                  ; the three rotated coordinates, times 128
+acc1:           .res 2
+acc2:           .res 2
+t_hi:           .res 1
 wx:             .res 2                  ; transformed point in world units
 wy:             .res 2
 wz:             .res 2
@@ -24,6 +28,10 @@ vmod_x:         .res 2                  ; current model's vertex arrays
 vmod_y:         .res 2
 vmod_z:         .res 2
 vmod_count:     .res 1
+bb_minx:        .res 1                  ; screen bounding box of the object's vertices
+bb_maxx:        .res 1
+bb_miny:        .res 1
+bb_maxy:        .res 1
 
         .segment "BSS"
 obj_model:      .res MAX_OBJECTS
@@ -156,6 +164,7 @@ transform_all:
         lda     obj_roll,x
         sta     rot_roll
         jsr     build_matrix
+        jsr     patch_matrix
         ldx     cur_obj
         ldy     obj_model,x
         lda     model_x_lo,y
@@ -172,7 +181,12 @@ transform_all:
         sta     vmod_z+1
         lda     model_vcount,y
         sta     vmod_count
+        lda     #$FF
+        sta     bb_minx
+        sta     bb_miny
         lda     #0
+        sta     bb_maxx
+        sta     bb_maxy
         sta     cur_vert
 @vert:  ldy     cur_vert
         lda     (vmod_x),y
@@ -187,50 +201,85 @@ transform_all:
         lda     cur_vert
         cmp     vmod_count
         bne     @vert
-        inc     cur_obj
+        lda     bb_maxx                 ; anything on screen: its box is drawn into
+        cmp     bb_minx
+        bcc     :+
+        lda     bb_minx
+        sta     lx0
+        lda     bb_maxx
+        sta     lx1
+        lda     bb_miny
+        sta     ly0
+        lda     bb_maxy
+        sta     ly1
+        jsr     mark_dirty
+:       inc     cur_obj
         jmp     @obj
 
-; row_dot ROW: acc = matrix[ROW*3..ROW*3+2] . (vx, vy, vz), signed 16 bit.
-.macro  row_dot row
-        lda     matrix+row*3
-        ldy     vx
-        jsr     smul
-        lda     mul_lo
-        sta     acc_lo
-        lda     mul_hi
-        sta     acc_hi
-        lda     matrix+row*3+1
-        ldy     vy
-        jsr     smul
-        lda     mul_lo
-        clc
-        adc     acc_lo
-        sta     acc_lo
-        lda     mul_hi
-        adc     acc_hi
-        sta     acc_hi
-        lda     matrix+row*3+2
-        ldy     vz
-        jsr     smul
-        lda     mul_lo
-        clc
-        adc     acc_lo
-        sta     acc_lo
-        lda     mul_hi
-        adc     acc_hi
-        sta     acc_hi
+; The vertex transform multiplies by the matrix through the signed quarter-square table
+; f (index n + 256): a*b = f(a+b) - f(b-a). With the vertex coordinate b held biased
+; (b + 128) in Y, f(a+b) is at f + (128 + a) + Y and f(b-a) at f + (128 - a) + Y, so
+; patch_matrix writes 128 + a and 128 - a into the operands' low bytes (the tables are
+; page aligned, and |a| <= 127 keeps both in 1-255). Entry e = row * 3 + column.
+
+.macro  patch_entry e
+        lda     matrix+e
+        eor     #$80                    ; 128 + a
+        sta     .ident(.sprintf("xf%d_pa", e))+1
+        sta     .ident(.sprintf("xf%d_pc", e))+1
+        lda     #$80
+        sec
+        sbc     matrix+e                ; 128 - a
+        sta     .ident(.sprintf("xf%d_pb", e))+1
+        sta     .ident(.sprintf("xf%d_pd", e))+1
 .endmacro
 
-; to_world DEST, OBJ_LO, OBJ_HI: DEST = acc / 128 + the object's position (X = object).
-.macro  to_world dest, pos_lo, pos_hi
-        lda     acc_lo
+patch_matrix:
+        .repeat 9, e
+        patch_entry e
+        .endrep
+        rts
+
+; prod E, FIRST, ACC: ACC (16 bit) = or += matrix entry E times the coordinate in Y.
+.macro  prod e, first, acc
+        sec
+.ident(.sprintf("xf%d_pa", e)):
+        lda     f_lo,y
+.ident(.sprintf("xf%d_pb", e)):
+        sbc     f_lo,y
+  .if first
+        sta     acc
+  .else
+        tax
+  .endif
+.ident(.sprintf("xf%d_pc", e)):
+        lda     f_hi,y
+.ident(.sprintf("xf%d_pd", e)):
+        sbc     f_hi,y
+  .if first
+        sta     acc+1
+  .else
+        sta     t_hi
+        txa
+        clc
+        adc     acc
+        sta     acc
+        lda     t_hi
+        adc     acc+1
+        sta     acc+1
+  .endif
+.endmacro
+
+; to_world DEST, ACC, OBJ_LO, OBJ_HI: DEST = ACC / 128 + the object's position (X = object).
+.macro  to_world dest, acc, pos_lo, pos_hi
+        lda     acc
         asl
-        lda     acc_hi
-        rol                             ; A = acc bits 14-7
+        lda     acc+1
+        rol                             ; A = ACC bits 14-7
         clc
         adc     pos_lo,x
         sta     dest
-        lda     acc_hi                  ; high byte: the sign of acc / 128
+        lda     acc+1                   ; high byte: the sign of ACC / 128
         and     #$80
         beq     :+
         lda     #$FF
@@ -238,16 +287,24 @@ transform_all:
         sta     dest+1
 .endmacro
 
+; transform_vertex: vx, vy, vz (biased) -> screen position of vertex vert_out.
 transform_vertex:
-        row_dot 0
+        ldy     vx
+        prod    0, 1, acc0
+        prod    3, 1, acc1
+        prod    6, 1, acc2
+        ldy     vy
+        prod    1, 0, acc0
+        prod    4, 0, acc1
+        prod    7, 0, acc2
+        ldy     vz
+        prod    2, 0, acc0
+        prod    5, 0, acc1
+        prod    8, 0, acc2
         ldx     cur_obj
-        to_world wx, obj_x_lo, obj_x_hi
-        row_dot 1
-        ldx     cur_obj
-        to_world wy, obj_y_lo, obj_y_hi
-        row_dot 2
-        ldx     cur_obj
-        to_world wz, obj_z_lo, obj_z_hi
+        to_world wx, acc0, obj_x_lo, obj_x_hi
+        to_world wy, acc1, obj_y_lo, obj_y_hi
+        to_world wz, acc2, obj_z_lo, obj_z_hi
 
         ldx     vert_out
         lda     #1
@@ -311,7 +368,26 @@ transform_vertex:
         sta     scr_y,x
         lda     #0
         sta     scr_ok,x
+        jmp     widen_bbox
 @out:   rts
+
+; widen_bbox: the object's bounding box takes in vertex X.
+widen_bbox:
+        lda     scr_y,x
+        cmp     bb_miny
+        bcs     :+
+        sta     bb_miny
+:       cmp     bb_maxy
+        bcc     :+
+        sta     bb_maxy
+:       lda     scr_x,x
+        cmp     bb_minx
+        bcs     :+
+        sta     bb_minx
+:       cmp     bb_maxx
+        bcc     :+
+        sta     bb_maxx
+:       rts
 
 ; project: A/Y = a signed 16-bit coordinate (low/high). Returns A = |c| * recip_val / 256
 ; with carry clear, or carry set when that is 256 or more. neg_flag = 1 when c < 0.

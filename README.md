@@ -14,8 +14,9 @@ kill quota, and the best scores are saved to disk.
 
 ## Status
 
-Early development. The current build starts the machine and shows the start-up screen
-above; the vector engine is being written now. Nothing is playable yet.
+Early development. The current build is the engine benchmark shown above: wireframe test
+models spin in the double-buffered hires viewport, and the panel below shows the frame
+rate and how many cycles each stage of a frame takes. There is no game to play yet.
 
 The game is free and open source and will stay that way.
 
@@ -42,6 +43,9 @@ cc65 V2.19 and compiles it into `.toolchain/`. On Arch Linux, `yay -S cc65` inst
 
 `bin/run.sh` starts the build in RetroArch with the Kernal64 core.
 
+The build also needs the .NET 10 SDK, which runs the project's own tool for the math
+tables, the font and the models (`tools/GaTool`).
+
 ## Tests
 
 ```sh
@@ -49,6 +53,7 @@ test/run.sh
 ```
 
 The tests run the game headless and silent in Kernal64's `k64run` tool, on PAL and NTSC.
+`test/bench.sh` runs the benchmark scenes the same way and prints their timings.
 They need a built Kernal64 in a folder next to this one (or `K64RUN` set to the path of
 `k64run`) and a folder with your own C64 ROMs (`K64_ROMS`, by default
 `~/.config/retroarch/system/kernal64`). The ROMs are not part of this repository.

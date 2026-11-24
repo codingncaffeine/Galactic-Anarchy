@@ -27,42 +27,48 @@ umul8:
         sta     mul_hi
         rts
 
-; smul: A * Y -> mul_lo/mul_hi, all signed. X is kept.
-smul:
-        sta     m_a
-        sty     m_b
-        eor     m_b
-        sta     m_sign
-        lda     m_b
-        bpl     :+
-        eor     #$FF
-        clc
-        adc     #1
-:       tay
-        lda     m_a
-        bpl     :+
-        eor     #$FF
-        clc
-        adc     #1
-:       jsr     umul8
-        bit     m_sign
-        bpl     :+
-        sec
-        lda     #0
-        sbc     mul_lo
-        sta     mul_lo
-        lda     #0
-        sbc     mul_hi
-        sta     mul_hi
-:       rts
-
-; smul7: A * Y >> 7 -> A, signed, for factors of magnitude up to 127 (the result then
-; fits a signed byte). X is kept.
+; smul7: (A * Y) >> 7 -> A, for signed bytes of magnitude up to 127 (the result then
+; fits a signed byte). Uses X.
+; With a' = a + 128 and b' = b + 128: a*b = f(a+b) - f(a-b), and the f index n + 256 is
+; a' + b' for a+b and a' - b' (+256 when no borrow) for a-b; the carry selects the page.
 smul7:
-        jsr     smul
+        eor     #$80
+        sta     m_a
+        tya
+        eor     #$80
+        sta     m_b
+        clc
+        adc     m_a
+        tax
+        bcs     @plus_hi
+        lda     f_lo,x
+        sta     mul_lo
+        lda     f_hi,x
+        jmp     @minus
+@plus_hi:
+        lda     f_lo+256,x
+        sta     mul_lo
+        lda     f_hi+256,x
+@minus: sta     mul_hi
+        lda     m_a
+        sec
+        sbc     m_b
+        tax
+        bcs     @minus_hi
+        sec
         lda     mul_lo
-        asl
+        sbc     f_lo,x
+        sta     mul_lo
         lda     mul_hi
+        sbc     f_hi,x
+        jmp     @shift
+@minus_hi:
+        lda     mul_lo                  ; carry is set
+        sbc     f_lo+256,x
+        sta     mul_lo
+        lda     mul_hi
+        sbc     f_hi+256,x
+@shift: asl     mul_lo
         rol
         rts
 

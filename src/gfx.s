@@ -19,6 +19,8 @@ col_end:        .res 1
 clr_col:        .res 1
 clr_row:        .res 1
 clr_y:          .res 1
+entry_tab:      .res 2                  ; the line routine's table of entry points
+line_vec:       .res 2                  ; the entry point jumped to
 
         .segment "BSS"
 ; For each 8-pixel column of each buffer, the first and last character row drawn into
@@ -29,8 +31,11 @@ dirty_max:      .res 64
         .segment "CODE"
 
 ; draw_line: from (lx0, ly0) to (lx1, ly1), viewport pixels, x 0-255, y 0-158.
-; Bresenham, one loop per octant pair. The pointer addresses the line's current row
-; (row_lo/row_hi), Y holds the column (x & $F8) and mask the pixel within the byte.
+; Bresenham with unrolled loops. ptr addresses the current character cell (cell row base
+; + column * 8) and Y the line within it, so a step down is INY and only every eighth
+; one moves ptr by 320. Mostly-horizontal lines are unrolled per pixel bit (the OR value
+; is a constant); mostly-vertical ones per line of the cell (the bit is in mask).
+; The error term is kept with the carry set between pixels.
 draw_line:
         lda     lx1
         cmp     lx0
@@ -43,25 +48,22 @@ draw_line:
         stx     ly0
         sta     ly1
 @ordered:
-        jsr     mark_dirty
         lda     lx1
         sec
         sbc     lx0
         sta     dx
-        ldx     ly0
-        lda     row_lo,x
-        sta     ptr
-        lda     row_hi,x
-        ora     bufhi
-        sta     ptr+1
-        lda     lx0
-        and     #7
-        tay
-        lda     pixel_mask,y
-        sta     mask
+        lda     ly0                     ; ptr = cell row base + x & $F8
+        and     #$F8
+        tax
         lda     lx0
         and     #$F8
-        tay
+        clc
+        adc     row_lo,x
+        sta     ptr
+        lda     row_hi,x
+        adc     #0
+        ora     bufhi
+        sta     ptr+1
         lda     ly1
         sec
         sbc     ly0
@@ -70,54 +72,36 @@ draw_line:
         adc     #1
         sta     dy
         cmp     dx
-        bcs     :+
-        jmp     xmajor_up
-:       jmp     ymajor_up
+        bcs     @y_up
+        lda     #<xu_entry
+        ldx     #>xu_entry
+        bne     @xmajor                 ; always
+@y_up:  lda     #<yu_entry
+        ldx     #>yu_entry
+        bne     @ymajor
 @down:  sta     dy
         cmp     dx
-        bcs     :+
-        jmp     xmajor_down
-:       jmp     ymajor_down
+        bcs     @y_down
+        lda     #<xd_entry
+        ldx     #>xd_entry
+        bne     @xmajor
+@y_down:
+        lda     #<yd_entry
+        ldx     #>yd_entry
+        bne     @ymajor
 
-.macro  next_row_down
-        inx
-        lda     row_lo,x
-        sta     ptr
-        lda     row_hi,x
-        ora     bufhi
-        sta     ptr+1
-.endmacro
-
-.macro  next_row_up
-        dex
-        lda     row_lo,x
-        sta     ptr
-        lda     row_hi,x
-        ora     bufhi
-        sta     ptr+1
-.endmacro
-
-; One pixel right: the mask moves on, and past bit 0 the column moves 8 bytes on.
-.macro  next_column
-        .local  same
-        lsr     mask
-        bcc     same
-        ror     mask                    ; carry was 1: mask = $80, carry now 0
-        tya
-        adc     #8
+@xmajor:                                ; entry by the starting pixel bit
+        sta     entry_tab
+        stx     entry_tab+1
+        lda     lx0
+        and     #7
+        asl
         tay
-same:
-.endmacro
-
-.macro  plot
-        lda     (ptr),y
-        ora     mask
-        sta     (ptr),y
-.endmacro
-
-.macro  xmajor  next_row
-        .local  loop, no_step
-        ldx     ly0
+        lda     (entry_tab),y
+        sta     line_vec
+        iny
+        lda     (entry_tab),y
+        sta     line_vec+1
         lda     dx
         lsr
         sta     err
@@ -125,28 +109,29 @@ same:
         clc
         adc     #1
         sta     cnt                     ; dx + 1 pixels; 0 means 256
-loop:   plot
-        next_column
-        lda     err
+        lda     ly0
+        and     #7
+        tay
         sec
-        sbc     dy
-        bcs     no_step
-        adc     dx                      ; carry is clear
-        sta     err
-        next_row
-        dec     cnt
-        bne     loop
-        rts
-no_step:
-        sta     err
-        dec     cnt
-        bne     loop
-        rts
-.endmacro
+        jmp     (line_vec)
 
-.macro  ymajor  next_row
-        .local  loop, no_step, next
-        ldx     ly0
+@ymajor:                                ; entry by the starting line in the cell
+        sta     entry_tab
+        stx     entry_tab+1
+        lda     lx0
+        and     #7
+        tay
+        lda     pixel_mask,y
+        sta     mask
+        lda     ly0
+        and     #7
+        asl
+        tay
+        lda     (entry_tab),y
+        sta     line_vec
+        iny
+        lda     (entry_tab),y
+        sta     line_vec+1
         lda     dy
         lsr
         sta     err
@@ -154,32 +139,167 @@ no_step:
         clc
         adc     #1
         sta     cnt
-loop:   plot
-        next_row
-        lda     err
+        lda     ly0
+        and     #7
+        tay
         sec
-        sbc     dx
-        bcs     no_step
-        adc     dy
-        sta     err
-        next_column
-        dec     cnt
-        bne     loop
+        jmp     (line_vec)
+
+; Moving to the cell below or above (ptr +- 320), Y to its first or last line.
+cell_down:
+        clc
+        lda     ptr
+        adc     #<320
+        sta     ptr
+        lda     ptr+1
+        adc     #>320
+        sta     ptr+1
+        ldy     #0
+        sec
         rts
-no_step:
-        sta     err
-        dec     cnt
-        bne     loop
+cell_up:
+        sec
+        lda     ptr
+        sbc     #<320
+        sta     ptr
+        lda     ptr+1
+        sbc     #>320
+        sta     ptr+1
+        ldy     #7
+        sec
         rts
+
+; One block per pixel bit N of a mostly-horizontal line; DOWN = 1 steps down.
+.macro  xblock  n, down, next
+        .local  keep, done
+        lda     (ptr),y
+        ora     #($80 >> n)
+        sta     (ptr),y
+        lda     err
+        sbc     dy
+        bcs     keep
+        adc     dx                      ; carry was clear; it is set again after
+        sta     err
+  .if down
+        iny
+        cpy     #8
+        bne     :+
+        jsr     cell_down
+:       sec
+  .else
+        dey
+        bpl     :+
+        jsr     cell_up
+:
+  .endif
+        dec     cnt
+        bne     next
+done:   rts
+keep:   sta     err
+        dec     cnt
+        beq     done
 .endmacro
 
-xmajor_down:    xmajor  next_row_down
-xmajor_up:      xmajor  next_row_up
-ymajor_down:    ymajor  next_row_down
-ymajor_up:      ymajor  next_row_up
+; Past bit 7: the next cell to the right.
+.macro  xcolumn first
+        lda     ptr
+        clc
+        adc     #8
+        sta     ptr
+        bcc     :+
+        inc     ptr+1
+:       sec
+        jmp     first
+.endmacro
 
-; mark_dirty: widens the back buffer's dirty rows over the line's bounding box.
-; Expects lx0 <= lx1.
+.macro  xmajor_code prefix, down
+        .repeat 8, n
+.ident(.sprintf("%s%d", prefix, n)):
+          .if n < 7
+        xblock  n, down, .ident(.sprintf("%s%d", prefix, n+1))
+          .else
+        xblock  n, down, .ident(.sprintf("%s_col", prefix))
+          .endif
+        .endrep
+.ident(.sprintf("%s_col", prefix)):
+        xcolumn .ident(.sprintf("%s0", prefix))
+.endmacro
+
+        xmajor_code "xd", 1
+        xmajor_code "xu", 0
+
+; One block per line L of the cell for a mostly-vertical line. Blocks follow each other
+; in drawing order (0-7 going down, 7-0 going up), so a block falls into the next line's.
+.macro  yblock  l, down, next
+        .local  keep, done, step
+        lda     (ptr),y
+        ora     mask
+        sta     (ptr),y
+        lda     err
+        sbc     dx
+        bcs     keep
+        adc     dy
+        sta     err
+        lsr     mask                    ; one pixel right
+        bcc     :+
+        ror     mask                    ; past bit 0: mask = $80, carry clear
+        lda     ptr
+        adc     #8
+        sta     ptr
+        bcc     :+
+        inc     ptr+1
+:       sec
+        dec     cnt
+        bne     step
+done:   rts
+keep:   sta     err
+        dec     cnt
+        beq     done
+step:
+  .if down
+    .if l < 7
+        iny
+    .else
+        jsr     cell_down
+        jmp     next
+    .endif
+  .else
+    .if l > 0
+        dey
+    .else
+        jsr     cell_up
+        jmp     next
+    .endif
+  .endif
+.endmacro
+
+.macro  ymajor_code prefix, down
+  .if down
+        .repeat 8, l
+.ident(.sprintf("%s%d", prefix, l)):
+        yblock  l, 1, .ident(.sprintf("%s0", prefix))
+        .endrep
+  .else
+        .repeat 8, i
+.ident(.sprintf("%s%d", prefix, 7-i)):
+        yblock  7-i, 0, .ident(.sprintf("%s7", prefix))
+        .endrep
+  .endif
+.endmacro
+
+        ymajor_code "yd", 1
+        ymajor_code "yu", 0
+
+        .segment "RODATA"
+xd_entry:       .word xd0, xd1, xd2, xd3, xd4, xd5, xd6, xd7
+xu_entry:       .word xu0, xu1, xu2, xu3, xu4, xu5, xu6, xu7
+yd_entry:       .word yd0, yd1, yd2, yd3, yd4, yd5, yd6, yd7
+yu_entry:       .word yu0, yu1, yu2, yu3, yu4, yu5, yu6, yu7
+
+        .segment "CODE"
+
+; mark_dirty: widens the back buffer's dirty rows over the box from (lx0, ly0) to
+; (lx1, ly1). Expects lx0 <= lx1. Called once per object with its screen bounding box.
 mark_dirty:
         lda     ly0
         ldx     ly1
@@ -228,41 +348,49 @@ mark_dirty:
         rts
 
 ; clear_back: clears every character cell the back buffer's dirty table names, then
-; empties the table.
+; empties the table. Per dirty column it runs part of an unrolled clear: one block of
+; eight `sta abs,y` per viewport row (Y = column * 8), entered at the first dirty row's
+; block, with an RTS patched over the first store after the last dirty row's block.
 clear_back:
+        lda     dirty_off
+        beq     :+
+        lda     #VIEW_ROWS+1
+:       sta     clr_y                   ; 0 or 21: which buffer's blocks
         ldx     dirty_off
         lda     #0
         sta     clr_col
 @col:   lda     dirty_min,x
         cmp     #$FF
         beq     @next
-        sta     clr_row
+        clc
+        adc     clr_y
+        tay                             ; entry: block of the first dirty row
+        lda     block_lo,y
+        sta     @call+1
+        lda     block_hi,y
+        sta     @call+2
+        lda     dirty_max,x
+        clc
+        adc     clr_y
+        tay                             ; stop: the block after the last dirty row
+        lda     block_lo+1,y
+        sta     @stop+1
+        sta     @restore+1
+        lda     block_hi+1,y
+        sta     @stop+2
+        sta     @restore+2
+        lda     #$60                    ; RTS
+@stop:  sta     $FFFF
         lda     clr_col
         asl
         asl
         asl
-        sta     clr_y
-@row:   lda     clr_row
-        asl
-        asl
-        asl
         tay
-        lda     row_lo,y
-        sta     ptr
-        lda     row_hi,y
-        ora     bufhi
-        sta     ptr+1
-        ldy     clr_y
         lda     #0
-        .repeat 7
-        sta     (ptr),y
-        iny
-        .endrep
-        sta     (ptr),y
-        lda     clr_row
-        cmp     dirty_max,x
-        inc     clr_row
-        bcc     @row
+@call:  jsr     $FFFF
+        lda     #$99                    ; STA abs,Y again
+@restore:
+        sta     $FFFF
         lda     #$FF
         sta     dirty_min,x
         lda     #0
@@ -273,6 +401,46 @@ clear_back:
         cmp     #32
         bne     @col
         rts
+
+; The unrolled clears, one per buffer: VIEW_ROWS blocks of 8 stores, then an RTS.
+.macro  clear_code bitmap
+        .repeat VIEW_ROWS, r
+        .repeat 8, k
+        sta     bitmap + r*320 + VIEW_LEFT_CELLS*8 + k,y
+        .endrep
+        .endrep
+        rts
+.endmacro
+
+clear_code_a:   clear_code BUF0_BITMAP_HI*256
+clear_code_b:   clear_code BUF1_BITMAP_HI*256
+
+        .segment "RODATA"
+; Block addresses, VIEW_ROWS + 1 per buffer. The extra entry is where the RTS goes when
+; the last dirty row is the bottom one: a spare byte, since the code ends in its own RTS.
+block_lo:
+        .repeat VIEW_ROWS, r
+        .byte   <(clear_code_a + r*24)
+        .endrep
+        .byte   <clear_spare
+        .repeat VIEW_ROWS, r
+        .byte   <(clear_code_b + r*24)
+        .endrep
+        .byte   <clear_spare
+block_hi:
+        .repeat VIEW_ROWS, r
+        .byte   >(clear_code_a + r*24)
+        .endrep
+        .byte   >clear_spare
+        .repeat VIEW_ROWS, r
+        .byte   >(clear_code_b + r*24)
+        .endrep
+        .byte   >clear_spare
+
+        .segment "BSS"
+clear_spare:    .res 1
+
+        .segment "CODE"
 
 ; reset_dirty: both buffers' tables empty (after the bitmaps were cleared whole).
 reset_dirty:
