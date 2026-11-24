@@ -386,7 +386,7 @@ centi_spawn:
         bcs     @full
         lda     #K_SEG
         jsr     setup_kind
-        lda     #0
+        lda     spawn_side              ; the body is on its head's side
         sta     en_side,x
         ldy     an_tmp
         txa
